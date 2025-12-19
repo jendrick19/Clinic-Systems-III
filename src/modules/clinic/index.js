@@ -1,0 +1,1 @@
+const { Router } = require('express');const casesRoutes = require('./routes');const router = Router();router.use('/', casesRoutes);module.exports = router;

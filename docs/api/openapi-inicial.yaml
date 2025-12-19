@@ -1,0 +1,4272 @@
+openapi: 3.0.3
+info:
+  title: Sistema de Gestión Clínica API
+  description: API REST para gestión de personas, profesionales, agendas, citas, episodios, órdenes médicas, facturación y notificaciones
+  version: 1.0.0
+  contact:
+    name: API Support Clinica API
+    email: 1001.29881683.ucla@gmail.com
+
+servers:
+  - url: http://localhost:3000/api
+    description: Servidor de desarrollo
+  - url: https://api.clinica.com
+    description: Servidor de producción
+
+tags:
+  - name: Auth
+    description: Autenticación y autorización
+  - name: Personas
+    description: Gestión de personas/pacientes
+  - name: Profesionales
+    description: Gestión de profesionales de salud
+  - name: Unidades
+    description: Unidades organizativas
+  - name: Agenda
+    description: Gestión de agendas y disponibilidad
+  - name: Citas
+    description: Gestión de citas médicas
+  - name: Episodios
+    description: Episodios de atención
+  - name: Notas Clínicas
+    description: Notas clínicas de los episodios
+  - name: Diagnósticos
+    description: Diagnósticos de los episodios
+  - name: Consentimientos
+    description: Consentimientos informados
+  - name: Órdenes
+    description: Órdenes médicas y resultados
+  - name: Aseguradoras
+    description: Aseguradoras y planes de salud
+  - name: Prestaciones
+    description: Prestaciones y aranceles
+  - name: Facturación
+    description: Facturación y pagos
+  - name: Notificaciones
+    description: Sistema de notificaciones
+
+security:
+  - bearerAuth: []
+
+paths:
+  # ==================== AUTH ====================
+  /auth/login:
+    post:
+      tags:
+        - Auth
+      summary: Iniciar sesión
+      description: Autentica un usuario y devuelve tokens de acceso
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - username
+                - password
+              properties:
+                username:
+                  type: string
+                  example: admin@clinica.com
+                password:
+                  type: string
+                  format: password
+                  example: "********"
+      responses:
+        '200':
+          description: Autenticación exitosa
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessToken:
+                    type: string
+                  refreshToken:
+                    type: string
+                  expiresIn:
+                    type: integer
+                    example: 3600
+                  tokenType:
+                    type: string
+                    example: Bearer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Credenciales inválidas
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /auth/refresh:
+    post:
+      tags:
+        - Auth
+      summary: Renovar token de acceso
+      description: Obtiene un nuevo token de acceso usando el refresh token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - refreshToken
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        '200':
+          description: Token renovado exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  accessToken:
+                    type: string
+                  expiresIn:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /usuarios:
+    get:
+      tags:
+        - Auth
+      summary: Listar usuarios
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: role
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Lista de usuarios
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Usuario'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags:
+        - Auth
+      summary: Crear usuario #Revisar los valores requeridos
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UsuarioInput'
+      responses:
+        '201':
+          description: Usuario creado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Usuario'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /roles:
+    get:
+      tags:
+        - Auth
+      summary: Listar roles
+      responses:
+        '200':
+          description: Lista de roles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Roles'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /permisos:
+    get:
+      tags:
+        - Auth
+      summary: Listar permisos
+      responses:
+        '200':
+          description: Lista de permisos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Permiso'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ==================== PERSONAS ====================
+  /operative/personas:
+    get:
+      tags:
+        - Personas
+      summary: Listar personas
+      description: Obtiene lista de personas con filtros opcionales
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: nombres
+          in: query
+          description: Buscar por nombres
+          schema:
+            type: string
+        - name: apellidos
+          in: query
+          description: Buscar por apellidos
+          schema:
+            type: string
+        - name: tipoDocumento
+          in: query
+          description: Filtrar por tipo de documento (case-insensitive: acepta cedula, CEDULA, Cedula, etc.)
+          schema:
+            type: string
+            enum: [cedula, rif, pasaporte, otro]
+        - name: numeroDocumento
+          in: query
+          description: Buscar por número de documento (búsqueda parcial)
+          schema:
+            type: string
+        - name: edad
+          in: query
+          description: Filtrar por edad
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 120
+        - name: sexo
+          in: query
+          description: Filtrar por sexo
+          schema:
+            type: string
+            enum: [M, F, O]
+        - name: estado
+          in: query
+          description: Filtrar por estado
+          schema:
+            type: boolean
+        - name: sortBy
+          in: query
+          description: Campo por el cual ordenar los resultados
+          schema:
+            type: string
+            enum: [nombres, apellidos, fechaNacimiento, createdAt]
+            default: apellidos
+        - name: sortOrder
+          in: query
+          description: Dirección del ordenamiento
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: asc
+      responses:
+        '200':
+          description: Lista de personas
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Persona'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags:
+        - Personas
+      summary: Registrar persona atendida
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PersonaInput'
+      responses:
+        '201':
+          description: Persona creada exitosamente
+          headers:
+            Location:
+              description: URL del recurso creado
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Persona'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /operative/personas/{id}:
+    get:
+      tags:
+        - Personas
+      summary: Obtener persona por ID
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Persona encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Persona'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    patch:
+      tags:
+        - Personas
+      summary: Actualizar persona
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PersonaPatch'
+      responses:
+        '200':
+          description: Persona actualizada exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Persona'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    delete:
+      tags:
+        - Personas
+      summary: Eliminar persona (lógico)
+      description: Realiza una eliminación lógica de la persona
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '204':
+          description: Persona eliminada exitosamente
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: No se puede eliminar (tiene registros asociados)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ==================== PROFESIONALES ====================
+  /operative/profesionales:
+    get:
+      tags:
+        - Profesionales
+      summary: Listar profesionales
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: nombres
+          in: query
+          description: Buscar por nombres
+          schema:
+            type: string
+        - name: apellidos
+          in: query
+          description: Buscar por apellidos
+          schema:
+            type: string
+        - name: especialidad
+          in: query
+          description: Filtrar por especialidad
+          schema:
+            type: string
+        - name: estado
+          in: query
+          description: Filtrar por estado
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Lista de profesionales
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Profesional'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags:
+        - Profesionales
+      summary: Crear profesional #Revisar los valores requeridos
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfesionalInput'
+      responses:
+        '201':
+          description: Profesional creado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profesional'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /operative/profesionales/{id}:
+    get:
+      tags:
+        - Profesionales
+      summary: Obtener profesional por ID
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Profesional encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profesional'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    patch:
+      tags:
+        - Profesionales
+      summary: Actualizar profesional
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfesionalPatch'
+      responses:
+        '200':
+          description: Profesional actualizado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profesional'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    delete:
+      tags:
+        - Profesionales
+      summary: Eliminar profesional (lógico)
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '204':
+          description: Profesional eliminado exitosamente
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ==================== UNIDADES ====================
+  /operative/unid-atencion:
+    get:
+      tags:
+        - Unidades
+      summary: Listar unidades organizativas
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: nombre
+          in: query
+          description: Buscar por nombre de la unidad
+          schema:
+            type: string
+        - name: tipo
+          in: query
+          description: Filtrar por tipo de unidad
+          schema:
+            type: string
+            enum: [Sede, Consultorio, Servicio]
+        - name: direccion
+          in: query
+          description: Buscar por dirección
+          schema:
+            type: string
+        - name: estado
+          in: query
+          description: Filtrar por estado
+          schema:
+            type: boolean
+      responses:
+        '200':
+          description: Lista de unidades
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Unidad'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags:
+        - Unidades
+      summary: Crear unidad
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UnidadInput'
+      responses:
+        '201':
+          description: Unidad creada exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Unidad'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /operative/unid-atencion/{id}:
+    get:
+      tags:
+        - Unidades
+      summary: Obtener unidad por ID
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Unidad encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Unidad'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    patch:
+      tags:
+        - Unidades
+      summary: Actualizar unidad
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UnidadInput'
+      responses:
+        '200':
+          description: Unidad actualizada exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Unidad'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    delete:
+      tags:
+        - Unidades
+      summary: Eliminar unidad (lógico)
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '204':
+          description: Unidad eliminada exitosamente
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ==================== AGENDA ====================
+  /operative/agendas:
+    get:
+      tags:
+        - Agenda
+      summary: Consultar disponibilidad de agenda
+      description: Obtiene bloques de agenda por profesional, unidad o rango de fechas
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: nombreProfesional
+          in: query
+          description: Buscar por nombre del profesional
+          schema:
+            type: string
+        - name: nombreUnidad
+          in: query
+          description: Buscar por nombre de la unidad
+          schema:
+            type: string
+        - name: profesional
+          in: query
+          description: ID del profesional
+          schema:
+            type: integer
+            format: int32
+        - name: unidad
+          in: query
+          description: ID de la unidad
+          schema:
+            type: integer
+            format: int32
+        - name: estado
+          in: query
+          description: Estado de la agenda
+          schema:
+            type: string
+            enum: [abierta, cerrada, reservada]
+        - name: fechaDesde
+          in: query
+          description: Fecha inicial del rango
+          schema:
+            type: string
+            format: date
+        - name: fechaHasta
+          in: query
+          description: Fecha final del rango
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Bloques de agenda encontrados
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/BloqueAgenda'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags:
+        - Agenda
+      summary: Crear bloque de agenda
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BloqueAgendaInput'
+      responses:
+        '201':
+          description: Bloque de agenda creado exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  codigo:
+                    type: integer
+                    example: 201
+                  mensaje:
+                    type: string
+                    example: Agenda creada exitosamente
+                  data:
+                    $ref: '#/components/schemas/BloqueAgenda'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Conflicto de horario
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /operative/agendas/{id}:
+    get:
+      tags:
+        - Agenda
+      summary: Obtener agenda por ID
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Agenda encontrada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  codigo:
+                    type: integer
+                    example: 200
+                  mensaje:
+                    type: string
+                    example: Agenda encontrada
+                  data:
+                    $ref: '#/components/schemas/BloqueAgenda'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    patch:
+      tags:
+        - Agenda
+      summary: Actualizar agenda
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BloqueAgendaInput'
+      responses:
+        '200':
+          description: Agenda actualizada exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  codigo:
+                    type: integer
+                    example: 200
+                  mensaje:
+                    type: string
+                    example: Agenda actualizada exitosamente
+                  data:
+                    $ref: '#/components/schemas/BloqueAgenda'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    delete:
+      tags:
+        - Agenda
+      summary: Eliminar agenda (lógico)
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Agenda eliminada exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  codigo:
+                    type: integer
+                    example: 200
+                  mensaje:
+                    type: string
+                    example: Agenda eliminada exitosamente
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ==================== CITAS ====================
+  /operative/citas:
+    get:
+      tags:
+        - Citas
+      summary: Listar citas
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: nombrePersona
+          in: query
+          description: Buscar por nombre del paciente
+          schema:
+            type: string
+        - name: nombreProfesional
+          in: query
+          description: Buscar por nombre del profesional
+          schema:
+            type: string
+        - name: paciente
+          in: query
+          description: ID del paciente
+          schema:
+            type: integer
+            format: int32
+        - name: profesional
+          in: query
+          description: ID del profesional
+          schema:
+            type: integer
+            format: int32
+        - name: agendaId
+          in: query
+          description: ID de la agenda
+            type: integer
+            format: int32
+        - name: unidadId
+          in: query
+          description: ID de la unidad de atención
+          schema:
+            type: integer
+            format: int32
+        - name: estado
+          in: query
+          description: Estado de la cita (case-insensitive: acepta solicitada, SOLICITADA, Solicitada, etc.)
+          schema:
+            type: string
+            enum: [solicitada, confirmada, cumplida, cancelada, no asistio]
+        - name: fechaDesde
+          in: query
+          description: Fecha inicial del rango
+          schema:
+            type: string
+            format: date
+        - name: fechaHasta
+          in: query
+          description: Fecha final del rango
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Lista de citas
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Cita'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags:
+        - Citas
+      summary: Crear cita
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CitaInput'
+      responses:
+        '201':
+          description: Cita creada exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  codigo:
+                    type: integer
+                    example: 201
+                  mensaje:
+                    type: string
+                    example: Cita creada exitosamente
+                  data:
+                    $ref: '#/components/schemas/Cita'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: Horario no disponible
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /operative/citas/{id}:
+    get:
+      tags:
+        - Citas
+      summary: Obtener cita por ID
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Cita encontrada
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  codigo:
+                    type: integer
+                    example: 200
+                  mensaje:
+                    type: string
+                    example: Cita encontrada
+                  data:
+                    $ref: '#/components/schemas/Cita'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    patch:
+      tags:
+        - Citas
+      summary: Actualizar cita (confirmar/cancelar/reprogramar)
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CitaPatch'
+      responses:
+        '200':
+          description: Cita actualizada exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  codigo:
+                    type: integer
+                    example: 200
+                  mensaje:
+                    type: string
+                    example: Cita actualizada exitosamente
+                  data:
+                    $ref: '#/components/schemas/Cita'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Nuevo horario no disponible (en caso de reprogramación)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    delete:
+      tags:
+        - Citas
+      summary: Eliminar cita (lógico)
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Cita eliminada exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  codigo:
+                    type: integer
+                    example: 200
+                  mensaje:
+                    type: string
+                    example: Cita eliminada exitosamente
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ==================== EPISODIOS ====================
+  /clinic/episodios:
+    get:
+      tags:
+        - Episodios
+      summary: Listar episodios
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: nombrePaciente
+          in: query
+          description: Buscar por nombre del paciente
+          schema:
+            type: string
+        - name: documentoPaciente
+          in: query
+          description: Buscar por documento del paciente
+          schema:
+            type: string
+        - name: paciente
+          in: query
+          description: ID del paciente
+          schema:
+            type: integer
+            format: int32
+        - name: estado
+          in: query
+          description: Estado del episodio (case-insensitive: acepta abierto, ABIERTO, Abierto, etc.)
+          schema:
+            type: string
+            enum: [abierto, cerrado]
+        - name: tipo
+          in: query
+          description: Tipo de episodio (case-insensitive: acepta consulta, CONSULTA, Consulta, etc.)
+          schema:
+            type: string
+            enum: [consulta, procedimiento, control, urgencia]
+        - name: fechaDesde
+          in: query
+          description: Fecha inicial del rango
+          schema:
+            type: string
+            format: date
+        - name: fechaHasta
+          in: query
+          description: Fecha final del rango
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Lista de episodios
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Episodio'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags:
+        - Episodios
+      summary: Crear episodio
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EpisodioInput'
+      responses:
+        '201':
+          description: Episodio creado exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  codigo:
+                    type: integer
+                    example: 201
+                  mensaje:
+                    type: string
+                    example: Episodio creado exitosamente
+                  data:
+                    $ref: '#/components/schemas/Episodio'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /clinic/episodios/{id}:
+    get:
+      tags:
+        - Episodios
+      summary: Obtener episodio por ID
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Episodio encontrado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  codigo:
+                    type: integer
+                    example: 200
+                  mensaje:
+                    type: string
+                    example: Episodio encontrado
+                  data:
+                    $ref: '#/components/schemas/Episodio'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    patch:
+      tags:
+        - Episodios
+      summary: Actualizar episodio
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EpisodioInput'
+      responses:
+        '200':
+          description: Episodio actualizado exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  codigo:
+                    type: integer
+                    example: 200
+                  mensaje:
+                    type: string
+                    example: Episodio actualizado exitosamente
+                  data:
+                    $ref: '#/components/schemas/Episodio'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /clinic/episodios/{id}/cerrar:
+    patch:
+      tags:
+        - Episodios
+      summary: Cerrar episodio
+      description: Cambia el estado del episodio a 'cerrado' (case-insensitive, se normaliza a minúsculas). Solo se puede cerrar un episodio que esté en estado 'abierto'.
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Episodio cerrado exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  codigo:
+                    type: integer
+                    example: 200
+                  mensaje:
+                    type: string
+                    example: Episodio cerrado exitosamente
+                  data:
+                    $ref: '#/components/schemas/Episodio'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /clinic/episodios/{episodeId}/diagnosticos:
+    get:
+      tags:
+        - Diagnósticos
+      summary: Listar diagnósticos del episodio
+      parameters:
+        - name: episodeId
+          in: path
+          required: true
+          description: ID del episodio
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Lista de diagnósticos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Diagnostico'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags:
+        - Diagnósticos
+      summary: Agregar diagnóstico al episodio
+      parameters:
+        - name: episodeId
+          in: path
+          required: true
+          description: ID del episodio
+          schema:
+            type: integer
+            format: int32
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DiagnosticoInput'
+      responses:
+        '201':
+          description: Diagnóstico agregado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Diagnostico'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ==================== NOTAS CLÍNICAS ====================
+  /clinic/notas-clinicas:
+    get:
+      tags:
+        - Notas Clínicas
+      summary: Listar notas clínicas
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: episodio
+          in: query
+          description: ID del episodio
+          schema:
+            type: integer
+            format: int32
+        - name: profesional
+          in: query
+          description: ID del profesional
+          schema:
+            type: integer
+            format: int32
+        - name: fechaDesde
+          in: query
+          description: Fecha inicial del rango
+          schema:
+            type: string
+            format: date
+        - name: fechaHasta
+          in: query
+          description: Fecha final del rango
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Lista de notas clínicas
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Nota'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags:
+        - Notas Clínicas
+      summary: Crear nota clínica
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotaInput'
+      responses:
+        '201':
+          description: Nota creada exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Nota'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /clinic/notas-clinicas/{id}:
+    get:
+      tags:
+        - Notas Clínicas
+      summary: Obtener nota clínica por ID
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Nota encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Nota'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    patch:
+      tags:
+        - Notas Clínicas
+      summary: Actualizar nota clínica
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotaInput'
+      responses:
+        '200':
+          description: Nota actualizada exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Nota'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /clinic/notas-clinicas/{id}/versiones:
+    get:
+      tags:
+        - Notas Clínicas
+      summary: Obtener historial de versiones de una nota
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Historial de versiones obtenido exitosamente
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Nota'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /clinic/notas-clinicas/{id}/version-actual:
+    get:
+      tags:
+        - Notas Clínicas
+      summary: Obtener la versión más reciente de una nota
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Versión actual obtenida exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Nota'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /clinic/notas-clinicas/{id}/comparar:
+    get:
+      tags:
+        - Notas Clínicas
+      summary: Comparar dos versiones de una nota
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+        - name: versionAnterior
+          in: query
+          required: true
+          description: ID de la versión anterior
+          schema:
+            type: integer
+            format: int32
+        - name: versionNueva
+          in: query
+          required: true
+          description: ID de la versión nueva
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Comparación realizada exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  versionAnterior:
+                    $ref: '#/components/schemas/Nota'
+                  versionNueva:
+                    $ref: '#/components/schemas/Nota'
+                  cambios:
+                    type: object
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /clinic/notas-clinicas/version/{versionId}:
+    get:
+      tags:
+        - Notas Clínicas
+      summary: Obtener una versión específica de una nota
+      parameters:
+        - name: versionId
+          in: path
+          required: true
+          description: ID de la versión
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Versión encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Nota'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ==================== DIAGNÓSTICOS ====================
+  /clinic/diagnosticos:
+    get:
+      tags:
+        - Diagnósticos
+      summary: Listar diagnósticos
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: codigo
+          in: query
+          description: Buscar por código CIE-10
+          schema:
+            type: string
+        - name: tipo
+          in: query
+          description: Tipo de diagnóstico
+          schema:
+            type: string
+            enum: [presuntivo, definitivo]
+        - name: episodio
+          in: query
+          description: ID del episodio
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Lista de diagnósticos
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Diagnostico'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags:
+        - Diagnósticos
+      summary: Crear diagnóstico
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DiagnosticoInput'
+      responses:
+        '201':
+          description: Diagnóstico creado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Diagnostico'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /clinic/diagnosticos/{id}:
+    get:
+      tags:
+        - Diagnósticos
+      summary: Obtener diagnóstico por ID
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Diagnóstico encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Diagnostico'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    put:
+      tags:
+        - Diagnósticos
+      summary: Actualizar diagnóstico
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DiagnosticoInput'
+      responses:
+        '200':
+          description: Diagnóstico actualizado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Diagnostico'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    delete:
+      tags:
+        - Diagnósticos
+      summary: Eliminar diagnóstico (lógico)
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '204':
+          description: Diagnóstico eliminado exitosamente
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /clinic/episodios/{episodeId}/diagnosticos/principal:
+    get:
+      tags:
+        - Diagnósticos
+      summary: Obtener diagnóstico principal del episodio
+      parameters:
+        - name: episodeId
+          in: path
+          required: true
+          description: ID del episodio
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Diagnóstico principal encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Diagnostico'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /clinic/episodios/{episodeId}/diagnosticos/{diagnosisId}/principal:
+    put:
+      tags:
+        - Diagnósticos
+      summary: Marcar diagnóstico como principal
+      parameters:
+        - name: episodeId
+          in: path
+          required: true
+          description: ID del episodio
+          schema:
+            type: integer
+            format: int32
+        - name: diagnosisId
+          in: path
+          required: true
+          description: ID del diagnóstico
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Diagnóstico marcado como principal exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Diagnostico'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ==================== CONSENTIMIENTOS ====================
+  /clinic/consentimientos:
+    get:
+      tags:
+        - Consentimientos
+      summary: Listar consentimientos
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: documento
+          in: query
+          description: Documento del paciente
+          schema:
+            type: string
+        - name: fechaDesde
+          in: query
+          description: Fecha inicial del rango
+          schema:
+            type: string
+            format: date
+        - name: fechaHasta
+          in: query
+          description: Fecha final del rango
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Lista de consentimientos
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Consentimiento'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags:
+        - Consentimientos
+      summary: Crear consentimiento
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConsentimientoInput'
+      responses:
+        '201':
+          description: Consentimiento creado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Consentimiento'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /clinic/consentimientos/{id}:
+    get:
+      tags:
+        - Consentimientos
+      summary: Obtener consentimiento por ID
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Consentimiento encontrado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Consentimiento'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    put:
+      tags:
+        - Consentimientos
+      summary: Actualizar consentimiento
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConsentimientoInput'
+      responses:
+        '200':
+          description: Consentimiento actualizado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Consentimiento'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    delete:
+      tags:
+        - Consentimientos
+      summary: Eliminar consentimiento (lógico)
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '204':
+          description: Consentimiento eliminado exitosamente
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ==================== ÓRDENES ====================
+  /ordenes:
+    get:
+      tags:
+        - Órdenes
+      summary: Listar órdenes médicas
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: personaId
+          in: query
+          schema:
+            type: integer
+            format: int32
+        - name: episodioId
+          in: query
+          schema:
+            type: integer
+            format: int32
+        - name: estado
+          in: query
+          schema:
+            type: string
+            enum: [Emitida, Autorizada, En curso, Completada, Anulada]
+      responses:
+        '200':
+          description: Lista de órdenes
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Orden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags:
+        - Órdenes
+      summary: Crear orden médica
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrdenInput'
+      responses:
+        '201':
+          description: Orden creada exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Orden'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /ordenes/{id}:
+    get:
+      tags:
+        - Órdenes
+      summary: Obtener orden por ID
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Orden encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Orden'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /ordenes/{id}/items:
+    get:
+      tags:
+        - Órdenes
+      summary: Listar items de la orden
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Lista de items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OrdenItem'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags:
+        - Órdenes
+      summary: Agregar item a la orden
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OrdenItemInput'
+      responses:
+        '201':
+          description: Item agregado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrdenItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /ordenes/{id}/resultados:
+    get:
+      tags:
+        - Órdenes
+      summary: Obtener resultados de la orden
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Resultados de la orden
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Resultado'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags:
+        - Órdenes
+      summary: Registrar resultado de orden
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResultadoInput'
+      responses:
+        '201':
+          description: Resultado registrado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Resultado'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /resultados:
+    get:
+      tags:
+        - Resultados
+      summary: Listar ordenes
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: ordenId
+          in: query
+          schema:
+            type: integer
+            format: int32
+        - name: paceienteId
+          in: query
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Lista de órdenes
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Resultado'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags:
+        - Resultados
+      summary: Registra un resultado de un análisis o procedimiento
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ResultadoInput'
+      responses:
+        '201':
+          description: Resultado registrado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Resultado'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ==================== ASEGURADORAS ====================
+  /aseguradoras:
+    get:
+      tags:
+        - Aseguradoras
+      summary: Listar aseguradoras
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Lista de aseguradoras
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Aseguradora'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags:
+        - Aseguradoras
+      summary: Crear aseguradora
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AseguradoraInput'
+      responses:
+        '201':
+          description: Aseguradora creada exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Aseguradora'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /planes:
+    get:
+      tags:
+        - Aseguradoras
+      summary: Listar planes de salud
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: aseguradoraId
+          in: query
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Lista de planes
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Plan'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags:
+        - Aseguradoras
+      summary: Crear plan de salud
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlanInput'
+      responses:
+        '201':
+          description: Plan creado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Plan'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /afiliaciones:
+    get:
+      tags:
+        - Aseguradoras
+      summary: Listar afiliaciones
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: personaId
+          in: query
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Lista de afiliaciones
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Afiliacion'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags:
+        - Aseguradoras
+      summary: Crear afiliación
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AfiliacionInput'
+      responses:
+        '201':
+          description: Afiliación creada exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Afiliacion'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ==================== PRESTACIONES ====================
+  /prestaciones:
+    get:
+      tags:
+        - Prestaciones
+      summary: Listar prestaciones
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: codigo
+          in: query
+          schema:
+            type: string
+        - name: categoria
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Lista de prestaciones
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Prestacion'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags:
+        - Prestaciones
+      summary: Crear prestación
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrestacionInput'
+      responses:
+        '201':
+          description: Prestación creada exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Prestacion'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /arancel:
+    get:
+      tags:
+        - Prestaciones
+      summary: Consultar aranceles
+      parameters:
+        - name: prestacionId
+          in: query
+          schema:
+            type: integer
+            format: int32
+        - name: planId
+          in: query
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: Lista de aranceles
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Arancel'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags:
+        - Prestaciones
+      summary: Crear arancel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ArancelInput'
+      responses:
+        '201':
+          description: Arancel creado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Arancel'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  # ==================== FACTURACIÓN ====================
+  /facturas:
+    get:
+      tags:
+        - Facturación
+      summary: Listar facturas
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: personaId
+          in: query
+          schema:
+            type: integer
+            format: int32
+        - name: estado
+          in: query
+          schema:
+            type: string
+            enum: [pendiente, pagada, parcial, anulada]
+        - name: fechaDesde
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: fechaHasta
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Lista de facturas
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Factura'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags:
+        - Facturación
+      summary: Crear factura
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FacturaInput'
+      responses:
+        '201':
+          description: Factura creada exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Factura'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /facturas/{id}:
+    get:
+      tags:
+        - Facturación
+      summary: Obtener factura por ID
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Factura encontrada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Factura'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /facturas/{id}/items:
+    get:
+      tags:
+        - Facturación
+      summary: Listar items de factura
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Lista de items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FacturaItem'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags:
+        - Facturación
+      summary: Agregar item a factura
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FacturaItemInput'
+      responses:
+        '201':
+          description: Item agregado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FacturaItem'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /facturas/{id}/pagos:
+    get:
+      tags:
+        - Facturación
+      summary: Listar pagos de factura
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Lista de pagos
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Pago'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags:
+        - Facturación
+      summary: Registrar pago de factura
+      parameters:
+        - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PagoInput'
+      responses:
+        '201':
+          description: Pago registrado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pago'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /pagos:
+    get:
+      tags:
+        - Pagos
+      summary: Listar pagos
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: facturaId
+          in: query
+          schema:
+            type: integer
+            format: int32
+        - name: medio
+          in: query
+          schema:
+            type: string
+            enum: [efectivo, tarjeta, transferencia]
+      responses:
+        '200':
+          description: Lista de pagos
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Pago'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags:
+        - Pagos
+      summary: Registrar pago
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PagoInput'
+      responses:
+        '201':
+          description: Pago registrado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pago'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+
+  # ==================== NOTIFICACIONES ====================
+  /notificaciones:
+    get:
+      tags:
+        - Notificaciones
+      summary: Obtener logs de notificaciones
+      parameters:
+        - $ref: '#/components/parameters/PageParam'
+        - $ref: '#/components/parameters/LimitParam'
+        - name: tipo
+          in: query
+          schema:
+            type: string
+            enum: [email, sms, push]
+        - name: estado
+          in: query
+          schema:
+            type: string
+            enum: [enviada, fallida, pendiente]
+        - name: fechaDesde
+          in: query
+          schema:
+            type: string
+            format: date-time
+      responses:
+        '200':
+          description: Lista de notificaciones
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Notificacion'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+    post:
+      tags:
+        - Notificaciones
+      summary: Enviar notificación
+      description: Endpoint idempotente para envío de notificaciones
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificacionInput'
+      responses:
+        '201':
+          description: Notificación enviada exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Notificacion'
+        '202':
+          description: Notificación en cola para envío
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Notificacion'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+# ==================== COMPONENTS ====================
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    IdParam:
+      name: id
+      in: path
+      required: true
+      description: ID del recurso
+      schema:
+        type: integer
+        format: int32
+    PageParam:
+      name: page
+      in: query
+      description: Número de página
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    LimitParam:
+      name: limit
+      in: query
+      description: Cantidad de elementos por página
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+
+  responses:
+    BadRequest:
+      description: Solicitud inválida
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: BAD_REQUEST
+            message: Los datos enviados son inválidos
+            details:
+              - field: email
+                message: Formato de email inválido
+    Unauthorized:
+      description: No autenticado
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: UNAUTHORIZED
+            message: Token de autenticación requerido o inválido
+            details: []
+    Forbidden:
+      description: No autorizado
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: FORBIDDEN
+            message: No tiene permisos para realizar esta acción
+            details: []
+    NotFound:
+      description: Recurso no encontrado
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: NOT_FOUND
+            message: El recurso solicitado no existe
+            details: []
+    Conflict:
+      description: Conflicto con el estado actual
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: CONFLICT
+            message: El recurso ya existe
+            details:
+              - field: documento
+                message: Ya existe una persona con este documento
+    TooManyRequests:
+      description: Demasiadas solicitudes
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: TOO_MANY_REQUESTS
+            message: Ha excedido el límite de solicitudes
+            details: []
+    InternalServerError:
+      description: Error interno del servidor
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: INTERNAL_ERROR
+            message: Ha ocurrido un error interno
+            details: []
+
+  schemas:
+    # ========== ERROR MODEL ==========
+    Error:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+          description: Código de error normalizado
+        message:
+          type: string
+          description: Mensaje descriptivo del error
+        details:
+          type: array
+          description: Detalles adicionales del error
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              message:
+                type: string
+
+    # ========== PAGINATION ==========
+    PaginatedResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items: {}
+        pagination:
+          type: object
+          properties:
+            page:
+              type: integer
+            limit:
+              type: integer
+            total:
+              type: integer
+            totalPages:
+              type: integer
+
+    # ========== AUTH ==========
+    Usuario:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        passwordHash:
+          type: string
+        estado:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        fechaCreacion:
+          type: string
+          format: date-time
+
+    UsuarioInput:
+      type: object
+      required:
+        - username
+        - email
+        - passwordHash
+        - roles
+      properties:
+        username:
+          type: string
+        email:
+          type: string
+          format: email
+        passwordHash:
+          type: string
+          format: password
+        roles:
+          type: array
+          items:
+            type: string
+
+    Roles:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        nombre:
+          type: string
+        descripcion:
+          type: string
+
+    Permiso:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        clave:
+          type: string
+        descripcion:
+          type: string
+
+    # ========== PERSONAS ATENDIDAS ==========
+    Persona:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        tipoDocumento:
+          type: string
+          description: Tipo de documento (case-insensitive, se normaliza a minúsculas)
+          enum: [cedula, rif, pasaporte, otro]
+        numeroDocumento:
+          type: string
+        nombres:
+          type: string
+        apellidos:
+          type: string
+        fechaNacimiento:
+          type: string
+          format: date-time
+        sexo:
+          type: string
+          enum: [M, F, O]
+        telefono:
+          type: string
+        correo:
+          type: string
+          format: email
+        direccion:
+          type: string
+        contactoEmergencia:
+          type: string
+        alergias:
+          type: string
+        estado:
+          type: boolean
+
+    PersonaInput:
+      type: object
+      required:
+        - id
+        - tipoDocumento
+        - numeroDocumento
+        - nombres
+        - apellidos
+        - fechaNacimiento
+        - sexo
+        - correo
+        - direccion
+        - contactoEmergencia
+        - alergias
+      properties:
+        id:
+          type: integer
+          format: int32
+        tipoDocumento:
+          type: string
+          description: Tipo de documento (case-insensitive, se normaliza a minúsculas)
+          enum: [cedula, rif, pasaporte, otro]
+        numeroDocumento:
+          type: string
+        nombres:
+          type: string
+        apellidos:
+          type: string
+        fechaNacimiento:
+          type: string
+          format: date-time
+        sexo:
+          type: string
+          enum: [M, F, O]
+        telefono:
+          type: string
+        correo:
+          type: string
+          format: email
+        direccion:
+          type: string
+        contactoEmergencia:
+          type: string
+        alergias:
+          type: string
+        estado:
+          type: boolean
+
+    PersonaPatch:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        tipoDocumento:
+          type: string
+          description: Tipo de documento (case-insensitive, se normaliza a minúsculas)
+          enum: [cedula, rif, pasaporte, otro]
+        numeroDocumento:
+          type: string
+        nombres:
+          type: string
+        apellidos:
+          type: string
+        fechaNacimiento:
+          type: string
+          format: date-time
+        sexo:
+          type: string
+          enum: [M, F, O]
+        telefono:
+          type: string
+        correo:
+          type: string
+          format: email
+        direccion:
+          type: string
+        contactoEmergencia:
+          type: string
+        alergias:
+          type: string
+        estado:
+          type: boolean
+
+    # ========== PROFESIONALES ==========
+    Profesional:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        nombres:
+          type: string
+        apellidos:
+          type: string
+        registroProfesional:
+          type: string
+        especialidad:
+          type: string
+        correo:
+          type: string
+          format: email
+        telefono:
+          type: string
+        agendaHabilidad:
+          type: boolean
+        estado:
+          type: boolean
+
+    ProfesionalInput:
+      type: object
+      required:
+        - nombres
+        - apellidos
+        - registroProfesional
+        - especialidad
+        - correo
+        - telefono
+        - agendaHabilidad
+      properties:
+        nombres:
+          type: string
+        apellidos:
+          type: string
+        registroProfesional:
+          type: string
+        especialidad:
+          type: string
+        correo:
+          type: string
+        telefono:
+          type: string
+        agendaHabilidad:
+          type: boolean
+
+    ProfesionalPatch:
+      type: object
+      properties:
+        nombres:
+          type: string
+        apellidos:
+          type: string
+        registroProfesional:
+          type: string
+        especialidad:
+          type: string
+        correo:
+          type: string
+        telefono:
+          type: string
+        agendaHabilidad:
+          type: boolean
+
+    # ========== UNIDADES ==========
+    Unidad:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        nombre:
+          type: string
+        tipo:
+          type: string
+          enum: [Sede, Consultorio, Servicio]
+        direccion:
+          type: string
+        telefono:
+          type: string
+        horarioAtencion:
+          type: string
+        estado:
+          type: boolean
+
+    UnidadInput:
+      type: object
+      required:
+        - nombre
+        - tipo
+        - direccion
+        - horarioAtencion
+      properties:
+        nombre:
+          type: string
+        codigo:
+          type: string
+        tipo:
+          type: string
+          enum: [Sede, Consultorio, Servicio]
+        direccion:
+          type: string
+        horarioAtencion:
+          type: string
+        
+
+    # ========== AGENDA ==========
+    BloqueAgenda:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        profesionalId:
+          type: integer
+          format: int32
+        unidadId:
+          type: integer
+          format: int32
+        inicio:
+          type: string
+          format: date-time
+        fin:
+          type: string
+          format: date-time
+        capacidad:
+          type: integer
+        estado:
+          type: string
+          enum: [Abierto, Cerrado, Reservado]
+
+    BloqueAgendaInput:
+      type: object
+      required:
+        - profesionalId
+        - unidadId
+        - inicio
+        - fin
+        - capacidad
+      properties:
+        profesionalId:
+          type: integer
+          format: int32
+        unidadId:
+          type: integer
+          format: int32
+        inicio:
+          type: string
+          format: date-time
+        fin:
+          type: string
+          format: date-time
+        capacidad:
+          type: integer
+        estado:
+          type: string
+          enum: [Abierto, Cerrado, Reservado]
+       
+
+    # ========== CITAS ==========
+    Cita:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        paciente:
+          type: object
+          description: Información del paciente
+          properties:
+            id:
+              type: integer
+              format: int32
+            nombres:
+              type: string
+            apellidos:
+              type: string
+        profesional:
+          type: object
+          description: Información del profesional
+          properties:
+            id:
+              type: integer
+              format: int32
+            nombres:
+              type: string
+            apellidos:
+              type: string
+        agendaId:
+          type: integer
+          format: int32
+          description: ID de la agenda asociada
+        unidad:
+          type: object
+          description: Información de la unidad de atención
+          properties:
+            id:
+              type: integer
+              format: int32
+            nombre:
+              type: string
+        inicio:
+          type: string
+          format: date-time
+        fin:
+          type: string
+          format: date-time
+        motivo:
+          type: string
+        canal:
+          type: string
+          enum: [Presencial, Virtual]
+        estado:
+          type: string
+          description: Estado de la cita (case-insensitive, se normaliza a minúsculas)
+          enum: [solicitada, confirmada, cumplida, cancelada, no asistio]
+        observaciones:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CitaInput:
+      type: object
+      required:
+        - pacienteId
+        - profesionalId
+        - unidadId
+        - inicio
+        - fin
+        - motivo
+        - canal
+      properties:
+        pacienteId:
+          type: integer
+          format: int32
+          description: ID del paciente
+        profesionalId:
+          type: integer
+          format: int32
+          description: ID del profesional
+        agendaId:
+          type: integer
+          format: int32
+          description: ID de la agenda asociada (opcional)
+        unidadId:
+          type: integer
+          format: int32
+          description: ID de la unidad de atención
+        inicio:
+          type: string
+          format: date-time
+        fin:
+          type: string
+          format: date-time
+        motivo:
+          type: string
+        canal:
+          type: string
+          enum: [Presencial, Virtual]
+        estado:
+          type: string
+          description: Estado de la cita (case-insensitive, se normaliza a minúsculas)
+          enum: [solicitada, confirmada, cumplida, cancelada, no asistio]
+       
+
+    CitaPatch:
+      type: object
+      properties:
+        pacienteId:
+          type: integer
+          format: int32
+          description: ID del paciente
+        profesionalId:
+          type: integer
+          format: int32
+          description: ID del profesional
+        agendaId:
+          type: integer
+          format: int32
+          description: ID de la agenda asociada
+        unidadId:
+          type: integer
+          format: int32
+          description: ID de la unidad de atención
+        inicio:
+          type: string
+          format: date-time
+        fin:
+          type: string
+          format: date-time
+        motivo:
+          type: string
+        canal:
+          type: string
+          enum: [Presencial, Virtual]
+        estado:
+          type: string
+          description: Estado de la cita (case-insensitive, se normaliza a minúsculas)
+          enum: [solicitada, confirmada, cumplida, cancelada, no asistio]
+        razonCambio:
+          type: string
+          description: Razón del cambio (requerida cuando se modifica estado, inicio o fin)
+
+    # ========== EPISODIOS ==========
+    Episodio:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        paciente:
+          type: object
+          description: Información del paciente
+          properties:
+            id:
+              type: integer
+              format: int32
+            nombres:
+              type: string
+            apellidos:
+              type: string
+            tipoDocumento:
+              type: string
+            numeroDocumento:
+              type: string
+        fechaApertura:
+          type: string
+          format: date-time
+        tipo:
+          type: string
+          description: Tipo de episodio (case-insensitive, se normaliza a minúsculas)
+          enum: [consulta, procedimiento, control, urgencia]
+        motivo:
+          type: string
+        estado:
+          type: string
+          description: Estado del episodio (case-insensitive, se normaliza a minúsculas)
+          enum: [abierto, cerrado]
+        notasClinicas:
+          type: array
+          description: Lista de notas clínicas asociadas
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+                format: int32
+              titulo:
+                type: string
+              contenido:
+                type: string
+              createdAt:
+                type: string
+                format: date-time
+        diagnosticos:
+          type: array
+          description: Lista de diagnósticos asociados
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+                format: int32
+              tipo:
+                type: string
+              descripcion:
+                type: string
+              codigoCIE10:
+                type: string
+              createdAt:
+                type: string
+                format: date-time
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    EpisodioInput:
+      type: object
+      required:
+        - pacienteId
+        - tipo
+      properties:
+        pacienteId:
+          type: integer
+          format: int32
+          description: ID del paciente
+        tipo:
+          type: string
+          description: Tipo de episodio (case-insensitive, se normaliza a minúsculas)
+          enum: [consulta, procedimiento, control, urgencia]
+        motivo:
+          type: string
+          description: Motivo del episodio (opcional, entre 5 y 500 caracteres)
+        estado:
+          type: string
+          description: Estado del episodio (opcional, case-insensitive, se normaliza a minúsculas, por defecto 'abierto')
+          enum: [abierto, cerrado]
+        fechaApertura:
+          type: string
+          format: date-time
+          description: Fecha de apertura del episodio (opcional, por defecto fecha actual)
+       
+    # ========== NOTAS ==========
+    Nota:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        episodioId:
+          type: integer
+          format: int32
+        profesionalId:
+          type: integer
+          format: int32
+        fecha:
+          type: string
+          format: date-time
+        subjetivo:
+          type: string
+        objetivo:
+          type: string
+        analisis:
+          type: string
+        plan:
+          type: string
+        adjuntos:
+          type: string
+
+    NotaInput:
+      type: object
+      required:
+        - episodioId
+        - profesionalId
+        - subjetivo
+        - objetivo
+        - analisis
+        - plan
+        - adjuntos
+      properties:
+        episodioId:
+          type: integer
+          format: int32
+        profesionalId:
+          type: integer
+          format: int32
+        subjetivo:
+          type: string
+        objetivo:
+          type: string
+        analisis:
+          type: string
+        plan:
+          type: string
+        adjuntos:
+          type: string
+
+    # ========== DIAGNÓSTICOS ==========
+    Diagnostico:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        episodioId:
+          type: integer
+          format: int32
+        codigo:
+          type: string
+        descripcion:
+          type: string
+        tipo:
+          type: string
+          enum: [presuntivo, definitivo]
+        principal:
+          type: boolean
+
+    DiagnosticoInput:
+      type: object
+      required:
+        - episodioId
+        - codigo
+        - descripcion
+        - tipo
+        - principal
+      properties:
+        episodioId:
+          type: integer
+          format: int32
+        codigo:
+          type: string
+        descripcion:
+          type: string
+        tipo:
+          type: string
+          enum: [presuntivo, definitivo]
+        principal:
+          type: boolean
+
+    # ========== CONSENTIMIENTOS ==========
+    Consentimiento:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        personaId:
+          type: integer
+          format: int32
+        tipoProcedimiento:
+          type: string
+        fecha:
+          type: string
+          format: date-time
+        metodo:
+          type: string
+          enum: [firma digital, aceptación verbal con registro]
+        archivoId:
+          type: integer
+          format: int32
+      
+
+    ConsentimientoInput:
+      type: object
+      required:
+        - personaId
+        - tipoProcedimiento
+        - metodo
+        - archivoId
+      properties:
+        personaId:
+          type: integer
+          format: int32
+        tipoProcedimiento:
+          type: string
+        metodo:
+          type: string
+          enum: [firma digital, aceptación verbal con registro]
+        archivoId:
+          type: integer
+          format: int32
+
+    # ========== ÓRDENES ==========
+    Orden:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        episodioId:
+          type: integer
+          format: int32
+        detalles:
+          type: string
+        tipo:
+          type: string
+          enum: [Laboratorio, Imagen, Procedimiento]
+        prioridad:
+          type: string
+          enum: [normal, urgente]
+        estado:
+          type: string
+          enum: [Emitida, Autorizada, En curso, Completada, Anulada]
+        
+    OrdenInput:
+      type: object
+      required:
+        - episodioId
+        - detalles
+        - tipo
+        - prioridad
+      properties:
+        episodioId:
+          type: integer
+          format: int32
+        detalles:
+          type: string
+        tipo:
+          type: string
+          enum: [Laboratorio, Imagen, Procedimiento]
+        prioridad:
+          type: string
+          enum: [normal, urgente]
+
+    # ========== ORDENES ITEMS ==========
+    OrdenItem:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        ordenId:
+          type: integer
+          format: int32
+        codigo:
+          type: string
+        descripcion:
+          type: string
+        indicaciones:
+          type: string
+        prioridad:
+          type: string
+          enum: [normal, urgente]
+        estado:
+          type: string
+          enum: [pendiente, en curso, completada, anulada]
+    
+    OrdenItemInput:
+      type: object
+      required:
+        - ordenId
+        - codigo
+        - descripcion
+        - indicaciones
+        - prioridad
+      properties:
+        ordenId:
+          type: integer
+          format: int32
+        codigo:
+          type: string
+        descripcion:
+          type: string
+        indicaciones:
+          type: string
+        prioridad:
+          type: string
+          enum: [normal, urgente]
+
+    # ========== RESULTADOS ==========
+    Resultado:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        ordenId:
+          type: integer
+          format: int32
+        fecha:
+          type: string
+          format: date-time
+        resumen:
+          type: string
+        archivoId:
+          type: integer
+          format: int32
+        version:
+          type: string
+
+    ResultadoInput:
+      type: object
+      required:
+        - ordenId
+        - resumen
+        - archivoId
+      properties:
+        ordenId:
+          type: integer
+          format: int32
+        resumen:
+          type: string
+        archivoId:
+          type: integer
+          format: int32
+
+    # ========== ASEGURADORAS ==========
+    Aseguradora:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        nombre:
+          type: string
+        nit:
+          type: string
+        contacto:
+          type: string
+        estado:
+          type: string
+          enum: [activo, inactivo]
+
+
+    AseguradoraInput:
+      type: object
+      required:
+        - nombre
+        - codigo
+      properties:
+        nombre:
+          type: string
+        codigo:
+          type: string
+        telefono:
+          type: string
+        email:
+          type: string
+
+    Plan:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        aseguradoraId:
+          type: integer
+          format: int32
+        nombre:
+          type: string
+        codigo:
+          type: string
+        tipo:
+          type: string
+        activo:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    PlanInput:
+      type: object
+      required:
+        - aseguradoraId
+        - nombre
+        - codigo
+      properties:
+        aseguradoraId:
+          type: integer
+          format: int32
+        nombre:
+          type: string
+        codigo:
+          type: string
+        tipo:
+          type: string
+
+    Afiliacion:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        personaId:
+          type: integer
+          format: int32
+        planId:
+          type: integer
+          format: int32
+        numeroAfiliado:
+          type: string
+        fechaInicio:
+          type: string
+          format: date
+        fechaFin:
+          type: string
+          format: date
+        activo:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    AfiliacionInput:
+      type: object
+      required:
+        - personaId
+        - planId
+        - numeroAfiliado
+        - fechaInicio
+      properties:
+        personaId:
+          type: integer
+          format: int32
+        planId:
+          type: integer
+          format: int32
+        numeroAfiliado:
+          type: string
+        fechaInicio:
+          type: string
+          format: date
+        fechaFin:
+          type: string
+          format: date
+
+    # ========== PRESTACIONES ==========
+    Prestacion:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        codigo:
+          type: string
+        nombre:
+          type: string
+        descripcion:
+          type: string
+        categoria:
+          type: string
+        activo:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    PrestacionInput:
+      type: object
+      required:
+        - codigo
+        - nombre
+        - categoria
+      properties:
+        codigo:
+          type: string
+        nombre:
+          type: string
+        descripcion:
+          type: string
+        categoria:
+          type: string
+
+    Arancel:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        prestacionId:
+          type: integer
+          format: int32
+        planId:
+          type: integer
+          format: int32
+        precio:
+          type: number
+          format: float
+        copago:
+          type: number
+          format: float
+        vigenciaDesde:
+          type: string
+          format: date
+        vigenciaHasta:
+          type: string
+          format: date
+        createdAt:
+          type: string
+          format: date-time
+
+    ArancelInput:
+      type: object
+      required:
+        - prestacionId
+        - planId
+        - precio
+        - vigenciaDesde
+      properties:
+        prestacionId:
+          type: integer
+          format: int32
+        planId:
+          type: integer
+          format: int32
+        precio:
+          type: number
+          format: float
+        copago:
+          type: number
+          format: float
+        vigenciaDesde:
+          type: string
+          format: date
+        vigenciaHasta:
+          type: string
+          format: date
+
+    # ========== FACTURACIÓN ==========
+    Factura:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        numero:
+          type: string
+        personaId:
+          type: integer
+          format: int32
+        fecha:
+          type: string
+          format: date
+        subtotal:
+          type: number
+          format: float
+        impuestos:
+          type: number
+          format: float
+        total:
+          type: number
+          format: float
+        saldo:
+          type: number
+          format: float
+        estado:
+          type: string
+          enum: [pendiente, pagada, parcial, anulada]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    FacturaInput:
+      type: object
+      required:
+        - personaId
+        - fecha
+      properties:
+        personaId:
+          type: integer
+          format: int32
+        fecha:
+          type: string
+          format: date
+
+    FacturaItem:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        facturaId:
+          type: integer
+          format: int32
+        prestacionId:
+          type: integer
+          format: int32
+        descripcion:
+          type: string
+        cantidad:
+          type: integer
+        precioUnitario:
+          type: number
+          format: float
+        subtotal:
+          type: number
+          format: float
+        createdAt:
+          type: string
+          format: date-time
+
+    FacturaItemInput:
+      type: object
+      required:
+        - prestacionId
+        - descripcion
+        - cantidad
+        - precioUnitario
+      properties:
+        prestacionId:
+          type: integer
+          format: int32
+        descripcion:
+          type: string
+        cantidad:
+          type: integer
+        precioUnitario:
+          type: number
+          format: float
+
+    Pago:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        facturaId:
+          type: integer
+          format: int32
+        monto:
+          type: number
+          format: float
+        metodoPago:
+          type: string
+          enum: [efectivo, tarjeta, transferencia, cheque]
+        referencia:
+          type: string
+        fecha:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+
+    PagoInput:
+      type: object
+      required:
+        - monto
+        - metodoPago
+        - fecha
+      properties:
+        monto:
+          type: number
+          format: float
+        metodoPago:
+          type: string
+          enum: [efectivo, tarjeta, transferencia, cheque]
+        referencia:
+          type: string
+        fecha:
+          type: string
+          format: date-time
+
+    # ========== NOTIFICACIONES ==========
+    Notificacion:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        personaId:
+          type: string
+        citaId:
+          type: integer
+        resultadoId:
+          type: integer
+        facturaId:
+          type: integer
+        destinatario:
+          type: string
+        plantilla:
+          type: string
+        payload:
+          type: string
+        estado:
+          type: string
+          enum: [Enviado, Error, Reintentado]
+        intentos:
+          type: integer
+        timestamp:
+          type: string
+          format: date-time
+
+    NotificacionInput:
+      type: object
+      required:
+        - personaId
+        - destinatario
+        - plantilla
+        - payload
+      properties:
+        personaId:
+          type: string
+        destinatario:
+          type: string
+        plantilla:
+          type: string
+        payload:
+          type: string
+        citaId:
+          type: integer
+          format: int32
+          nullable: true
+        resultadoId:
+          type: integer
+          format: int32
+          nullable: true
+        facturaId:
+          type: integer
+          format: int32
+          nullable: true
+      oneOf:
+        - required:
+            - citaId
+          properties:
+            citaId:
+              type: string
+              format: int32
+          not:
+            required:
+              - resultadoId
+              - facturaId
+            properties:
+              resultadoId:
+                type: integer
+                nullable: true
+                enum: [null]
+              facturaId:
+                type: integer
+                nullable: true
+                enum: [null]
+        - required:
+            - resultadoId
+          properties:
+            resultadoId:
+              type: string
+              format: int32
+          not:
+            required:
+              - citaId
+              - facturaId
+            properties:
+              citaId:
+                type: integer
+                nullable: true
+                enum: [null]
+              facturaId:
+                type: integer
+                nullable: true
+                enum: [null]
+        - required:
+            - facturaId
+          properties:
+            facturaId:
+              type: string
+              format: int32
+          not:
+            required:
+              - citaId
+              - resultadoId
+            properties:
+              citaId:
+                type: integer
+                nullable: true
+                enum: [null]
+              resultadoId:
+                type: integer
+                nullable: true
+                enum: [null]
