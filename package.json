@@ -6,6 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
+    "dev:frontend": "cd vue-project && npm run dev",
+    "dev:fullstack": "concurrently \"npm run dev\" \"npm run dev:frontend\" --names \"API,VUE\" --prefix-colors \"bgBlue,bgMagenta\"",
     "seed": "node scripts/run-seeder.js",
     "seed:undo": "node scripts/clear-seeder.js",
     "seed:cli": "npx sequelize-cli db:seed:all",
@@ -19,6 +21,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
     "express-validator": "^7.3.0",
@@ -26,6 +29,7 @@
     "sequelize": "^6.37.7"
   },
   "devDependencies": {
+    "concurrently": "^9.2.1",
     "nodemon": "^3.1.10",
     "sequelize-cli": "^6.6.3"
   }
