@@ -6,6 +6,12 @@ const findById = async (id) => {
     return Professional.findByPk(id);
 };
 
+const findByProfessionalRegister = async (professionalRegister) => {
+    return Professional.findOne({
+        where: { professionalRegister }
+    });
+};
+
 const findAndCountAll = async ({ where, offset, limit, order }) => {
     return Professional.findAndCountAll({
         where,
@@ -47,6 +53,7 @@ const changeStatus = async (professional) => {
 
 module.exports = {
     findById,
+    findByProfessionalRegister,
     findAndCountAll,
     createWithUser,
     update,

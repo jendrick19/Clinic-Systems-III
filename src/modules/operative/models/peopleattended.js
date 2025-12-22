@@ -21,7 +21,7 @@ module.exports = (sequelize, DataTypes) => {
     }
   }
   PeopleAttended.init({
-    documentType: DataTypes.ENUM('cedula', 'rif', 'pasaporte', 'otro'),
+    documentType: DataTypes.ENUM('cedula', 'rif', 'pasaporte', 'extranjero', 'otro'),
     documentId: DataTypes.STRING,
     names: DataTypes.STRING,
     surNames: DataTypes.STRING,
@@ -31,7 +31,7 @@ module.exports = (sequelize, DataTypes) => {
     email: DataTypes.STRING,
     address: DataTypes.STRING,
     emergencyContact: DataTypes.STRING,
-    allergies: DataTypes.STRING,
+    patologias: DataTypes.STRING,
     status: DataTypes.BOOLEAN
   }, {
     sequelize,

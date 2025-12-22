@@ -1,1 +1,8 @@
-const { Router } = require('express');const accessRoutes = require('./routes');const router = Router();router.use('/access', accessRoutes);module.exports = router;
+const { Router } = require('express');
+const platformRoutes = require('./routes');
+const router = Router();
+
+// Las rutas de platform se montan directamente sin prefijo adicional
+router.use('/', platformRoutes);
+
+module.exports = router;

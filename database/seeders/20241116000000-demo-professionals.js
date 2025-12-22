@@ -1,4 +1,89 @@
-'use strict';module.exports = {  async up(queryInterface, Sequelize) {    const now = new Date();    const nombres = [      'Juan', 'María', 'Carlos', 'Ana', 'Luis',      'Carmen', 'Pedro', 'Laura', 'Miguel', 'Isabel',      'José', 'Elena', 'Antonio', 'Rosa', 'Francisco',      'Marta', 'David', 'Patricia', 'Rafael', 'Lucía'    ];    const apellidos = [      'García Pérez', 'Rodríguez López', 'Martínez González', 'Fernández Sánchez', 'López Díaz',      'González Martín', 'Sánchez Ruiz', 'Pérez Jiménez', 'Martín Hernández', 'Gómez Moreno',      'Jiménez Álvarez', 'Ruiz Romero', 'Hernández Torres', 'Díaz Navarro', 'Moreno Domínguez',      'Álvarez Gil', 'Romero Vázquez', 'Torres Serrano', 'Navarro Ramos', 'Domínguez Castro'    ];    const especialidades = [      'Cardiología', 'Pediatría', 'Traumatología', 'Dermatología', 'Neurología',      'Oftalmología', 'Ginecología', 'Psiquiatría', 'Medicina General', 'Odontología',      'Cardiología', 'Pediatría', 'Traumatología', 'Dermatología', 'Neurología',      'Oftalmología', 'Ginecología', 'Psiquiatría', 'Medicina General', 'Odontología'    ];    const users = [];    for (let i = 1; i <= 20; i++) {      const nombre = nombres[i - 1];      const apellido = apellidos[i - 1].split(' ')[0].toLowerCase();      users.push({        username: `${nombre.toLowerCase()}${apellido}${i}`,        email: `${nombre.toLowerCase()}.${apellido}${i}@hospital.com`,        passwordHash: '$2b$10$abcdefghijklmnopqrstuvwxyz1234567890ABCDEFGHIJ',        status: true,        creationDate: now,        createdAt: now,        updatedAt: now,      });    }    await queryInterface.bulkInsert('Users', users, {});    const insertedUsers = await queryInterface.sequelize.query(      `SELECT id FROM Users WHERE email LIKE '%@hospital.com' ORDER BY id DESC LIMIT 20`,      { type: Sequelize.QueryTypes.SELECT }    );    insertedUsers.reverse();    if (insertedUsers.length !== 20) {      throw new Error(`Se esperaban 20 usuarios pero se obtuvieron ${insertedUsers.length}`);    }    const professionals = [];    for (let i = 0; i < 20; i++) {      const nombre = nombres[i];      const apellido = apellidos[i];      const especialidad = especialidades[i];      const userId = insertedUsers[i].id;      professionals.push({        userId: userId,        names: nombre,        surNames: apellido,        professionalRegister: `MP-${String(i + 1).padStart(5, '0')}`, 
-        specialty: especialidad,        email: `${nombre.toLowerCase()}.${apellido.split(' ')[0].toLowerCase()}${i + 1}@hospital.com`,        phone: `+58412${String(1000000 + i).substring(1)}`, 
-        scheduleEnabled: i % 3 !== 0, 
-        status: true,        createdAt: now,        updatedAt: now,      });    }    await queryInterface.bulkInsert('Profesionals', professionals, {});    console.log('✅ Seeder ejecutado: 20 usuarios y 20 profesionales creados');  },  async down(queryInterface, Sequelize) {    await queryInterface.bulkDelete('Profesionals', {      professionalRegister: {        [Sequelize.Op.like]: 'MP-%'      }    }, {});    await queryInterface.bulkDelete('Users', {      email: {        [Sequelize.Op.like]: '%@hospital.com'      }    }, {});    console.log('✅ Rollback ejecutado: Profesionales y usuarios eliminados');  }};
+'use strict';
+
+module.exports = {
+  async up(queryInterface, Sequelize) {
+    // Verificar si ya existe el odontólogo
+    const existingProfessional = await queryInterface.sequelize.query(
+      `SELECT id FROM Profesionals WHERE professionalRegister = 'OD-01'`,
+      { type: Sequelize.QueryTypes.SELECT }
+    );
+
+    if (existingProfessional.length > 0) {
+      console.log('⚠️ El odontólogo OD-01 ya existe, omitiendo creación');
+      return;
+    }
+
+    const now = new Date();
+    
+    // Verificar si ya existe el usuario
+    const existingUser = await queryInterface.sequelize.query(
+      `SELECT id FROM Users WHERE email = 'odontologo@clinicadental.com'`,
+      { type: Sequelize.QueryTypes.SELECT }
+    );
+
+    let userId;
+    
+    if (existingUser.length > 0) {
+      // Usuario ya existe, usar su ID
+      userId = existingUser[0].id;
+      console.log('⚠️ El usuario ya existe, usando ID existente');
+    } else {
+      // Crear un solo usuario para el odontólogo
+      const user = {
+        username: 'dr.odontologo',
+        email: 'odontologo@clinicadental.com',
+        passwordHash: '$2b$10$abcdefghijklmnopqrstuvwxyz1234567890ABCDEFGHIJ',
+        status: true,
+        creationDate: now,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      await queryInterface.bulkInsert('Users', [user], {});
+      
+      // Obtener el ID del usuario recién creado
+      const insertedUsers = await queryInterface.sequelize.query(
+        `SELECT id FROM Users WHERE email = 'odontologo@clinicadental.com'`,
+        { type: Sequelize.QueryTypes.SELECT }
+      );
+
+      if (insertedUsers.length === 0) {
+        throw new Error('No se pudo crear el usuario del odontólogo');
+      }
+
+      userId = insertedUsers[0].id;
+    }
+
+    // Crear un solo odontólogo
+    const professional = {
+      userId: userId,
+      names: 'Dr. Juan',
+      surNames: 'Pérez García',
+      professionalRegister: 'OD-01',
+      specialty: 'Odontología',
+      email: 'odontologo@clinicadental.com',
+      phone: '+584121234567',
+      scheduleEnabled: true,
+      status: true,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await queryInterface.bulkInsert('Profesionals', [professional], {});
+    console.log('✅ Seeder ejecutado: 1 odontólogo creado');
+  },
+
+  async down(queryInterface, Sequelize) {
+    // Eliminar el profesional
+    await queryInterface.bulkDelete('Profesionals', {
+      professionalRegister: 'OD-01'
+    }, {});
+
+    // Eliminar el usuario
+    await queryInterface.bulkDelete('Users', {
+      email: 'odontologo@clinicadental.com'
+    }, {});
+
+    console.log('✅ Rollback ejecutado: Odontólogo y usuario eliminados');
+  }
+};

@@ -22,27 +22,42 @@ const mapModelToResponse = (person) => {
     correo: person.email,
     direccion: person.address,
     contactoEmergencia: person.emergencyContact,
-    alergias: person.allergies,
+    patologias: person.patologias,
     estado: person.status,
   };
 };
 
 const mapRequestToCreate = (body) => {
+  // El ID no se incluye en creación, se genera automáticamente por la BD
   const payload = {
-    id: Number(body.id),
     documentType: body.tipoDocumento,
     documentId: body.numeroDocumento,
     names: body.nombres,
     surNames: body.apellidos,
-    dateOfBirth: new Date(body.fechaNacimiento),
-    gender: body.sexo,
-    address: body.direccion,
-    emergencyContact: body.contactoEmergencia,
   };
 
-  if (body.telefono !== undefined) payload.phone = body.telefono;
-  if (body.correo !== undefined) payload.email = body.correo;
-  if (body.alergias !== undefined) payload.allergies = body.alergias;
+  // Campos opcionales
+  if (body.fechaNacimiento) {
+    payload.dateOfBirth = new Date(body.fechaNacimiento);
+  }
+  if (body.sexo) {
+    payload.gender = body.sexo.toLowerCase();
+  }
+  if (body.telefono !== undefined && body.telefono !== null && body.telefono !== '') {
+    payload.phone = body.telefono;
+  }
+  if (body.correo !== undefined && body.correo !== null && body.correo !== '') {
+    payload.email = body.correo;
+  }
+  if (body.direccion !== undefined && body.direccion !== null && body.direccion !== '') {
+    payload.address = body.direccion;
+  }
+  if (body.contactoEmergencia !== undefined && body.contactoEmergencia !== null && body.contactoEmergencia !== '') {
+    payload.emergencyContact = body.contactoEmergencia;
+  }
+  if (body.patologias !== undefined && body.patologias !== null && body.patologias !== '') {
+    payload.patologias = body.patologias;
+  }
   if (body.estado !== undefined) {
     if (typeof body.estado === 'string') {
       payload.status = ['true', '1', 'activo', 'active'].includes(body.estado.toLowerCase());
@@ -73,7 +88,7 @@ const mapRequestToUpdate = (body) => {
   if (body.correo !== undefined) payload.email = body.correo;
   if (body.direccion !== undefined) payload.address = body.direccion;
   if (body.contactoEmergencia !== undefined) payload.emergencyContact = body.contactoEmergencia;
-  if (body.alergias !== undefined) payload.allergies = body.alergias;
+  if (body.patologias !== undefined) payload.patologias = body.patologias;
   if (body.estado !== undefined) {
     if (typeof body.estado === 'string') {
       payload.status = ['true', '1', 'activo', 'active'].includes(body.estado.toLowerCase());
