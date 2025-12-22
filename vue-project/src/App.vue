@@ -1,64 +1,76 @@
 <script setup>
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
+import Login from './components/Login.vue'
+import Register from './components/Register.vue'
+import DashboardAdmin from './components/DashboardAdmin.vue'
+import DashboardCliente from './components/DashboardCliente.vue'
 
-const apiStatus = ref('Esperando...')
-const loading = ref(false)
+// Estados: 'login', 'register', 'dashboard-admin', 'dashboard-client'
+const currentView = ref('login')
+const userType = ref(null)
 
-const testAPI = async () => {
-  loading.value = true
-  try {
-    // Ejemplo de petición a tu API
-    const response = await fetch('/api')
-    if (response.ok) {
-      const data = await response.json()
-      apiStatus.value = `✅ ${data.mensaje} - Versión: ${data.version}`
-    } else {
-      apiStatus.value = '⚠️ API respondió con error'
-    }
-  } catch (error) {
-    apiStatus.value = '❌ Error conectando con API: ' + error.message
-  } finally {
-    loading.value = false
+onMounted(() => {
+  // Verificar si hay un usuario logueado
+  const user = localStorage.getItem('user')
+  if (user) {
+    const userData = JSON.parse(user)
+    userType.value = userData.tipo
+    currentView.value = userData.tipo === 'admin' ? 'dashboard-admin' : 'dashboard-client'
   }
+})
+
+const handleLoginSuccess = (data) => {
+  userType.value = data.tipo
+  currentView.value = data.tipo === 'admin' ? 'dashboard-admin' : 'dashboard-client'
+}
+
+const handleRegisterSuccess = () => {
+  // Después del registro exitoso, mostrar el login
+  currentView.value = 'login'
+}
+
+const handleShowRegister = () => {
+  currentView.value = 'register'
+}
+
+const handleShowLogin = () => {
+  currentView.value = 'login'
+}
+
+const handleLogout = () => {
+  localStorage.removeItem('user')
+  currentView.value = 'login'
+  userType.value = null
 }
 </script>
 
 <template>
-  <div class="min-h-screen bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center p-4">
-    <div class="bg-white rounded-2xl shadow-2xl p-8 max-w-md w-full">
-      <h1 class="text-4xl font-bold text-gray-800 mb-4 text-center">
-        ¡Clinic System! 🏥
-      </h1>
-      <p class="text-blue-800 text-center mb-6">
-        Vue 3 + Vite + Tailwind CSS + Node.js
-      </p>
-      
-      <div class="space-y-4">
-        <button 
-          @click="testAPI"
-          :disabled="loading"
-          class="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white font-semibold py-3 px-6 rounded-lg transition duration-300 transform hover:scale-105 disabled:transform-none">
-          {{ loading ? 'Probando...' : 'Probar API Backend' }}
-        </button>
-        
-        <div class="bg-gradient-to-r from-purple-100 to-blue-100 p-4 rounded-lg">
-          <p class="text-sm text-gray-700 font-semibold mb-2">
-            Estado del Backend:
-          </p>
-          <p class="text-sm text-gray-600">
-            {{ apiStatus }}
-          </p>
-        </div>
+  <div>
+    <!-- Login View -->
+    <Login
+      v-if="currentView === 'login'"
+      @login-success="handleLoginSuccess"
+      @show-register="handleShowRegister"
+    />
 
-        <div class="bg-green-50 p-4 rounded-lg border border-green-200">
-          <p class="text-xs text-green-800">
-            ✅ Tailwind CSS funcionando<br>
-            ✅ Vue 3 + Vite funcionando<br>
-            ✅ Proxy configurado
-          </p>
-        </div>
-      </div>
-    </div>
+    <!-- Register View -->
+    <Register
+      v-if="currentView === 'register'"
+      @register-success="handleRegisterSuccess"
+      @show-login="handleShowLogin"
+    />
+
+    <!-- Admin Dashboard -->
+    <DashboardAdmin
+      v-if="currentView === 'dashboard-admin'"
+      @logout="handleLogout"
+    />
+
+    <!-- Client Dashboard -->
+    <DashboardCliente
+      v-if="currentView === 'dashboard-client'"
+      @logout="handleLogout"
+    />
   </div>
 </template>
 

@@ -5,17 +5,7 @@
 echo "🌱 Ejecutando seeders en orden..."
 echo ""
 
-echo "1️⃣  Creando personas..."
-npx sequelize-cli db:seed --seed 20251115000000-demo-people.js
-if [ $? -eq 0 ]; then
-    echo "✅ Personas creadas"
-else
-    echo "❌ Error al crear personas"
-    exit 1
-fi
-echo ""
-
-echo "2️⃣  Creando profesionales y usuarios..."
+echo "1️⃣  Creando profesionales y usuarios..."
 npx sequelize-cli db:seed --seed 20241116000000-demo-professionals.js
 if [ $? -eq 0 ]; then
     echo "✅ Profesionales creados"
@@ -25,7 +15,7 @@ else
 fi
 echo ""
 
-echo "3️⃣  Creando unidades de atención..."
+echo "2️⃣  Creando unidades de atención..."
 npx sequelize-cli db:seed --seed 20251116000000-demo-care-units.js
 if [ $? -eq 0 ]; then
     echo "✅ Unidades de atención creadas"
@@ -35,12 +25,22 @@ else
 fi
 echo ""
 
-echo "4️⃣  Creando agendas..."
+echo "3️⃣  Creando agendas..."
 npx sequelize-cli db:seed --seed 20251119000000-demo-schedules.js
 if [ $? -eq 0 ]; then
     echo "✅ Agendas creadas"
 else
     echo "❌ Error al crear agendas"
+    exit 1
+fi
+echo ""
+
+echo "4️⃣  Creando pacientes..."
+npx sequelize-cli db:seed --seed 20251220000001-demo-patients.js
+if [ $? -eq 0 ]; then
+    echo "✅ Pacientes creados"
+else
+    echo "❌ Error al crear pacientes"
     exit 1
 fi
 echo ""
@@ -78,8 +78,8 @@ echo ""
 echo "🎉 ¡Todos los seeders ejecutados exitosamente!"
 echo ""
 echo "📊 Resumen de datos creados:"
-echo "   - 50 personas"
-echo "   - 20 profesionales"
+echo "   - 1 odontólogo profesional"
+echo "   - 15 pacientes"
 echo "   - Unidades de atención"
 echo "   - Agendas"
 echo "   - Citas"

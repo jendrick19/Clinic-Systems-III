@@ -33,13 +33,11 @@ const checkDocumentUniqueness = async (value, { req }) => {
 };
 
 const validateCreate = [
-  body('id')
-    .notEmpty().withMessage('El ID es requerido')
-    .isInt({ min: 1 }).withMessage('El ID debe ser un número entero positivo'),
+  // El ID no se valida en creación, se genera automáticamente
   body('tipoDocumento')
     .notEmpty().withMessage('El tipo de documento es requerido')
     .customSanitizer((value) => value ? value.toLowerCase() : value)
-    .isIn(['cedula', 'rif', 'pasaporte', 'otro']).withMessage('Tipo de documento inválido'),
+    .isIn(['cedula', 'rif', 'pasaporte', 'extranjero', 'otro']).withMessage('Tipo de documento inválido'),
   body('numeroDocumento')
     .notEmpty().withMessage('El número de documento es requerido')
     .isLength({ min: 5, max: 20 }).withMessage('El número de documento debe tener entre 5 y 20 caracteres')
@@ -48,9 +46,10 @@ const validateCreate = [
   validateNames(),
   validateSurnames(),
   body('fechaNacimiento')
-    .notEmpty().withMessage('La fecha de nacimiento es requerida')
+    .optional()
     .isISO8601().withMessage('La fecha de nacimiento debe ser una fecha válida (YYYY-MM-DD)')
     .custom((value) => {
+      if (!value) return true; // Es opcional
       const birthDate = new Date(value);
       const today = new Date();
       const age = today.getFullYear() - birthDate.getFullYear();
@@ -60,19 +59,19 @@ const validateCreate = [
       return true;
     }),
   body('sexo')
-    .notEmpty().withMessage('El sexo es requerido')
-    .isIn(['M', 'F', 'O']).withMessage('El sexo debe ser M (Masculino), F (Femenino) u O (Otro)'),
+    .optional()
+    .isIn(['m', 'f', 'o', 'M', 'F', 'O']).withMessage('El sexo debe ser M (Masculino), F (Femenino) u O (Otro)'),
   validatePhone('telefono'),
   validateEmail('correo'),
   body('direccion')
-    .notEmpty().withMessage('La dirección es requerida')
+    .optional()
     .isLength({ min: 5, max: 200 }).withMessage('La dirección debe tener entre 5 y 200 caracteres'),
   body('contactoEmergencia')
-    .notEmpty().withMessage('El contacto de emergencia es requerido')
-    .isLength({ min: 5, max: 200 }).withMessage('El contacto de emergencia debe tener entre 5 y 200 caracteres'),
-  body('alergias')
     .optional()
-    .isLength({ max: 500 }).withMessage('Las alergias no pueden superar los 500 caracteres'),
+    .isLength({ min: 5, max: 200 }).withMessage('El contacto de emergencia debe tener entre 5 y 200 caracteres'),
+  body('patologias')
+    .optional()
+    .isLength({ max: 500 }).withMessage('Las patologías no pueden superar los 500 caracteres'),
   validateStatus('estado'),
   handleValidationErrors,
 ];
@@ -82,7 +81,7 @@ const validateUpdate = [
   body('tipoDocumento')
     .optional()
     .customSanitizer((value) => value ? value.toLowerCase() : value)
-    .isIn(['cedula', 'rif', 'pasaporte', 'otro']).withMessage('Tipo de documento inválido'),
+    .isIn(['cedula', 'rif', 'pasaporte', 'extranjero', 'otro']).withMessage('Tipo de documento inválido'),
   body('numeroDocumento')
     .optional()
     .isLength({ min: 5, max: 20 }).withMessage('El número de documento debe tener entre 5 y 20 caracteres')
@@ -113,9 +112,9 @@ const validateUpdate = [
   body('contactoEmergencia')
     .optional()
     .isLength({ min: 5, max: 200 }).withMessage('El contacto de emergencia debe tener entre 5 y 200 caracteres'),
-  body('alergias')
+  body('patologias')
     .optional()
-    .isLength({ max: 500 }).withMessage('Las alergias no pueden superar los 500 caracteres'),
+    .isLength({ max: 500 }).withMessage('Las patologías no pueden superar los 500 caracteres'),
   validateStatus('estado'),
   handleValidationErrors,
 ];
@@ -131,7 +130,7 @@ const validateList = [
   query('tipoDocumento')
     .optional()
     .customSanitizer((value) => value ? value.toLowerCase() : value)
-    .isIn(['cedula', 'rif', 'pasaporte', 'otro']).withMessage('Tipo de documento inválido'),
+    .isIn(['cedula', 'rif', 'pasaporte', 'extranjero', 'otro']).withMessage('Tipo de documento inválido'),
   query('numeroDocumento')
     .optional()
     .isLength({ min: 1, max: 20 }).withMessage('El número de documento debe tener entre 1 y 20 caracteres'),
