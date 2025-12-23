@@ -46,6 +46,15 @@ Raíz del proyecto
 │     │   ├── services/       Lógica de negocio de plataforma
 │     │   └── validators/     Validadores del dominio de plataforma
 │     │
+│     ├── intelligence/
+│     │   ├── controllers/
+│     │   │   └── IAController.js
+│     │   ├── services/
+│     │   │   └── SmartSchedulingService.js
+│     │   ├── routes/
+│     │   │   └── index.js
+│     │   └── index.js
+│     │
 │     └── README.md           Descripción general de los módulos (si existe)
 │
 ├── database/                 Configuración y artefactos de base de datos

@@ -15,24 +15,24 @@ if (config.use_env_variable) {
 }
 
 const modelFactories = [
-  require('../../src/modules/operative/models/Appointment'),
-  require('../../src/modules/operative/models/AppointmentHistory'),
-  require('../../src/modules/operative/models/CareUnit'),
-  require('../../src/modules/operative/models/PeopleAttended'),
-  require('../../src/modules/operative/models/Professional'),
-  require('../../src/modules/operative/models/Schedule'),
-  require('../../src/modules/clinic/models/ClinicalNote'),
-  require('../../src/modules/clinic/models/ClinicalNoteVersion'),
-  require('../../src/modules/clinic/models/Episode'),
-  require('../../src/modules/clinic/models/Diagnosis'),
-  require('../../src/modules/clinic/models/Consent'),
-  require('../../src/modules/clinic/models/Order'),
-  require('../../src/modules/clinic/models/orderitem'),
-  require('../../src/modules/clinic/models/Result'),
-  require('../../src/modules/clinic/models/ResultVersion'),
-  require('../../src/modules/platform/models/User'),
-  require('../../src/modules/bussines/models/Insurer'),
-  require('../../src/modules/bussines/models/Plan'),
+  require('../../src/modules/operative/models/appointment'),        // antes Appointment
+  require('../../src/modules/operative/models/appointmenthistory'), // antes AppointmentHistory
+  require('../../src/modules/operative/models/careunit'),           // antes CareUnit
+  require('../../src/modules/operative/models/peopleattended'),     // antes PeopleAttended
+  require('../../src/modules/operative/models/professional'),       // antes Professional
+  require('../../src/modules/operative/models/schedule'),           // antes Schedule
+  require('../../src/modules/clinic/models/clinicalnote'),          // antes ClinicalNote
+  require('../../src/modules/clinic/models/clinicalnoteversion'),   // antes ClinicalNoteVersion
+  require('../../src/modules/clinic/models/episode'),               // antes Episode
+  require('../../src/modules/clinic/models/diagnosis'),             // antes Diagnosis
+  require('../../src/modules/clinic/models/consent'),               // antes Consent
+  require('../../src/modules/clinic/models/order'),                 // antes Order
+  require('../../src/modules/clinic/models/orderItem'),             // OJO: Este parece ser camelCase (orderItem.js)
+  require('../../src/modules/clinic/models/result'),                // antes Result
+  require('../../src/modules/clinic/models/resultversion'),         // antes ResultVersion
+  require('../../src/modules/platform/models/user'),                // antes User
+  require('../../src/modules/bussines/models/insurer'),             // antes Insurer
+  require('../../src/modules/bussines/models/plan'),                // antes Plan
 ];
 
 modelFactories.forEach(registerModel => {
