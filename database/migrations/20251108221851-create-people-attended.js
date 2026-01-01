@@ -40,7 +40,7 @@ module.exports = {
       emergencyContact: {
         type: Sequelize.STRING
       },
-      patologias: {
+      alergias: {
         type: Sequelize.STRING
       },
       status: {

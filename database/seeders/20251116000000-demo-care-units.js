@@ -64,19 +64,32 @@ module.exports = {
     ];
     const careUnits = [];
     for (let i = 0; i < 10; i++) {
-      careUnits.push({
-        name: nombres[i],
-        type: tipos[i],
-        address: direcciones[i],
-        telephone: telefonos[i],
-        businessHours: horariosAtencion[i],
-        status: i < 9, 
-        createdAt: now,
-        updatedAt: now
-      });
+      // Verificar si ya existe por nombre para evitar error de validación (unique)
+      const existing = await queryInterface.sequelize.query(
+        `SELECT id FROM CareUnits WHERE name = '${nombres[i]}'`,
+        { type: Sequelize.QueryTypes.SELECT }
+      );
+
+      if (existing.length === 0) {
+        careUnits.push({
+          name: nombres[i],
+          type: tipos[i],
+          address: direcciones[i],
+          telephone: telefonos[i],
+          businessHours: horariosAtencion[i],
+          status: i < 9, 
+          createdAt: now,
+          updatedAt: now
+        });
+      }
     }
-    await queryInterface.bulkInsert('CareUnits', careUnits, {});
-    console.log('✅ Seeder ejecutado: 10 unidades de atención creadas');
+
+    if (careUnits.length > 0) {
+      await queryInterface.bulkInsert('CareUnits', careUnits, {});
+      console.log(`✅ Seeder ejecutado: ${careUnits.length} unidades de atención creadas`);
+    } else {
+      console.log('⚠️ Las unidades de atención ya existen, omitiendo creación');
+    }
   },
   async down(queryInterface, Sequelize) {
     await queryInterface.bulkDelete('CareUnits', {

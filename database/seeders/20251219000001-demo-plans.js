@@ -124,8 +124,22 @@ module.exports = {
       });
     }
 
-    if (plans.length > 0) {
-      await queryInterface.bulkInsert('Plans', plans, {});
+    const toInsert = [];
+    for (const plan of plans) {
+      const existing = await queryInterface.sequelize.query(
+        `SELECT id FROM Plans WHERE codigo = '${plan.codigo}'`,
+        { type: Sequelize.QueryTypes.SELECT }
+      );
+      if (existing.length === 0) {
+        toInsert.push(plan);
+      }
+    }
+
+    if (toInsert.length > 0) {
+      await queryInterface.bulkInsert('Plans', toInsert, {});
+      console.log(`✅ Seeder ejecutado: ${toInsert.length} planes creados`);
+    } else {
+      console.log('⚠️ Los planes ya existen, omitiendo creación');
     }
   },
 

@@ -46,8 +46,8 @@ module.exports = {
       'Traer carnet de vacunación',
       'Consulta prioritaria'
     ];
-    const canales = ['Presencial', 'Virtual'];
-    const estados = ['Solicitada', 'Confirmada', 'Cumplida', 'Cancelada', 'No asistio'];
+    const canales = ['presencial', 'virtual'];
+    const estados = ['solicitada', 'confirmada', 'cumplida', 'cancelada', 'no asistio'];
     const appointments = [];
     const generarFecha = (diasDesdeHoy) => {
       const fecha = new Date();
@@ -111,13 +111,13 @@ module.exports = {
       let estado;
       if (i < 10) {
         diasOffset = -30 + i * 2;
-        estado = randomItem(['Cumplida', 'Cancelada', 'No asistio']);
+        estado = randomItem(['cumplida', 'cancelada', 'no asistio']);
       } else if (i < 20) {
         diasOffset = i - 10;
-        estado = randomItem(['Solicitada', 'Confirmada']);
+        estado = randomItem(['solicitada', 'confirmada']);
       } else {
         diasOffset = 5 + (i - 20) * 2;
-        estado = randomItem(['Solicitada', 'Confirmada']);
+        estado = randomItem(['solicitada', 'confirmada']);
       }
       const fechaCita = generarFecha(diasOffset);
       const hora = 8 + (i % 8); 
@@ -146,8 +146,8 @@ module.exports = {
     const appointmentHistories = [
       {
         appointmentId: 1,
-        oldStatus: 'Solicitada',
-        newStatus: 'Confirmada',
+        oldStatus: 'solicitada',
+        newStatus: 'confirmada',
         oldStartTime: null,
         newStartTime: null,
         oldEndTime: null,
@@ -159,8 +159,8 @@ module.exports = {
       },
       {
         appointmentId: 1,
-        oldStatus: 'Confirmada',
-        newStatus: 'Cumplida',
+        oldStatus: 'confirmada',
+        newStatus: 'cumplida',
         oldStartTime: null,
         newStartTime: null,
         oldEndTime: null,
@@ -185,8 +185,8 @@ module.exports = {
       },
       {
         appointmentId: 5,
-        oldStatus: 'Confirmada',
-        newStatus: 'Cancelada',
+        oldStatus: 'confirmada',
+        newStatus: 'cancelada',
         oldStartTime: null,
         newStartTime: null,
         oldEndTime: null,
@@ -198,8 +198,8 @@ module.exports = {
       },
       {
         appointmentId: 7,
-        oldStatus: 'Confirmada',
-        newStatus: 'No asistio',
+        oldStatus: 'confirmada',
+        newStatus: 'no asistio',
         oldStartTime: null,
         newStartTime: null,
         oldEndTime: null,
@@ -211,8 +211,8 @@ module.exports = {
       },
       {
         appointmentId: 11,
-        oldStatus: 'Solicitada',
-        newStatus: 'Confirmada',
+        oldStatus: 'solicitada',
+        newStatus: 'confirmada',
         oldStartTime: null,
         newStartTime: null,
         oldEndTime: null,
@@ -224,8 +224,8 @@ module.exports = {
       },
       {
         appointmentId: 15,
-        oldStatus: 'Solicitada',
-        newStatus: 'Confirmada',
+        oldStatus: 'solicitada',
+        newStatus: 'confirmada',
         oldStartTime: generarHorario(generarFecha(5), 9).start,
         newStartTime: generarHorario(generarFecha(5), 11).start,
         oldEndTime: generarHorario(generarFecha(5), 9).end,
@@ -237,8 +237,8 @@ module.exports = {
       },
       {
         appointmentId: 20,
-        oldStatus: 'Solicitada',
-        newStatus: 'Confirmada',
+        oldStatus: 'solicitada',
+        newStatus: 'confirmada',
         oldStartTime: null,
         newStartTime: null,
         oldEndTime: null,

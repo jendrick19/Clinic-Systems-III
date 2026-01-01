@@ -22,7 +22,7 @@ const mapModelToResponse = (person) => {
     correo: person.email,
     direccion: person.address,
     contactoEmergencia: person.emergencyContact,
-    patologias: person.patologias,
+    alergias: person.alergias,
     estado: person.status,
   };
 };
@@ -55,8 +55,8 @@ const mapRequestToCreate = (body) => {
   if (body.contactoEmergencia !== undefined && body.contactoEmergencia !== null && body.contactoEmergencia !== '') {
     payload.emergencyContact = body.contactoEmergencia;
   }
-  if (body.patologias !== undefined && body.patologias !== null && body.patologias !== '') {
-    payload.patologias = body.patologias;
+  if (body.alergias !== undefined && body.alergias !== null && body.alergias !== '') {
+    payload.alergias = body.alergias;
   }
   if (body.estado !== undefined) {
     if (typeof body.estado === 'string') {
@@ -88,7 +88,7 @@ const mapRequestToUpdate = (body) => {
   if (body.correo !== undefined) payload.email = body.correo;
   if (body.direccion !== undefined) payload.address = body.direccion;
   if (body.contactoEmergencia !== undefined) payload.emergencyContact = body.contactoEmergencia;
-  if (body.patologias !== undefined) payload.patologias = body.patologias;
+  if (body.alergias !== undefined) payload.alergias = body.alergias;
   if (body.estado !== undefined) {
     if (typeof body.estado === 'string') {
       payload.status = ['true', '1', 'activo', 'active'].includes(body.estado.toLowerCase());

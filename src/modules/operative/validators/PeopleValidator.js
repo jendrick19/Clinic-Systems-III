@@ -69,9 +69,9 @@ const validateCreate = [
   body('contactoEmergencia')
     .optional()
     .isLength({ min: 5, max: 200 }).withMessage('El contacto de emergencia debe tener entre 5 y 200 caracteres'),
-  body('patologias')
+  body('alergias')
     .optional()
-    .isLength({ max: 500 }).withMessage('Las patologías no pueden superar los 500 caracteres'),
+    .isLength({ max: 500 }).withMessage('Las alergias no pueden superar los 500 caracteres'),
   validateStatus('estado'),
   handleValidationErrors,
 ];
@@ -112,9 +112,9 @@ const validateUpdate = [
   body('contactoEmergencia')
     .optional()
     .isLength({ min: 5, max: 200 }).withMessage('El contacto de emergencia debe tener entre 5 y 200 caracteres'),
-  body('patologias')
+  body('alergias')
     .optional()
-    .isLength({ max: 500 }).withMessage('Las patologías no pueden superar los 500 caracteres'),
+    .isLength({ max: 500 }).withMessage('Las alergias no pueden superar los 500 caracteres'),
   validateStatus('estado'),
   handleValidationErrors,
 ];

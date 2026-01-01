@@ -83,14 +83,14 @@ module.exports = {
       const fechaNacimiento = generarFechaNacimiento();
       const documentId = generarDocumento(i);
       
-      // Patologías opcionales (30% de probabilidad)
-      let patologia = null;
+      // Alergias opcionales (30% de probabilidad)
+      let alergia = null;
       if (Math.random() > 0.7) {
-        const patologiasPosibles = [
-          'Hipertensión', 'Diabetes', 'Asma', 'Artritis', 'Colesterol alto',
-          'Migraña', 'Ansiedad', 'Depresión', 'Alergia al polen'
+        const alergiasPosibles = [
+          'Polen', 'Polvo', 'Penicilina', 'Látex', 'Frutos secos',
+          'Mariscos', 'Lactosa', 'Huevo', 'Ácaros'
         ];
-        patologia = randomItem(patologiasPosibles);
+        alergia = randomItem(alergiasPosibles);
       }
       
       pacientes.push({
@@ -104,7 +104,7 @@ module.exports = {
         email: generarEmail(nombre, apellido1, i + 1),
         address: generarDireccion(),
         emergencyContact: generarContactoEmergencia(),
-        patologias: patologia,
+        alergias: alergia,
         status: true,
         createdAt: now,
         updatedAt: now

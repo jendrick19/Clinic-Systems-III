@@ -180,19 +180,19 @@
             />
           </div>
 
-          <!-- Patologías -->
+          <!-- Alergias -->
           <div>
-            <label for="patologias" class="block text-sm font-medium text-slate-700 mb-2">
-              Patologías Conocidas
+            <label for="alergias" class="block text-sm font-medium text-slate-700 mb-2">
+              Alergias Conocidas
             </label>
             <textarea
-              id="patologias"
-              v-model="formData.patologias"
+              id="alergias"
+              v-model="formData.alergias"
               rows="3"
-              placeholder="Ej: Hipertensión, Diabetes, Asma..."
+              placeholder="Ej: Polen, Polvo, Penicilina..."
               class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all outline-none resize-none"
             ></textarea>
-            <p class="text-xs text-slate-500 mt-1">Separa las patologías por comas si hay más de una</p>
+            <p class="text-xs text-slate-500 mt-1">Separa las alergias por comas si hay más de una</p>
           </div>
 
           <!-- Mensaje de Error -->
@@ -314,7 +314,7 @@ const formData = ref({
   gender: '',
   address: '',
   emergencyContact: '',
-  patologias: '',
+  alergias: '',
 })
 
 const loading = ref(false)
@@ -342,7 +342,7 @@ const handleRegister = async () => {
       sexo: formData.value.gender || undefined,
       direccion: formData.value.address || undefined,
       contactoEmergencia: formData.value.emergencyContact || undefined,
-      patologias: formData.value.patologias || undefined,
+      alergias: formData.value.alergias || undefined,
     }
 
     const response = await fetch('/api/operative/personas', {
@@ -372,7 +372,7 @@ const handleRegister = async () => {
         gender: '',
         address: '',
         emergencyContact: '',
-        patologias: '',
+        alergias: '',
       }
 
       // Mostrar modal de éxito

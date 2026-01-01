@@ -1,1 +1,85 @@
-'use strict';module.exports = {  async up(queryInterface, Sequelize) {    await queryInterface.createTable('Appointments', {      id: {        allowNull: false,        autoIncrement: true,        primaryKey: true,        type: Sequelize.INTEGER      },      peopleId: {        type: Sequelize.INTEGER,        allowNull: false,        references: {            model: 'PeopleAttendeds',            key: 'id'        },        onUpdate: 'CASCADE',        onDelete: 'CASCADE'      },      professionalId: {        type: Sequelize.INTEGER,        allowNull: false,        references: {            model: 'Profesionals',            key: 'id'        },        onUpdate: 'CASCADE',        onDelete: 'CASCADE'      },      scheduleId: {        type: Sequelize.INTEGER,        allowNull: true,        references: {            model: 'Schedules',            key: 'id'        },        onUpdate: 'CASCADE',        onDelete: 'SET NULL'      },      unitId: {        type: Sequelize.INTEGER,        allowNull: false,        references: {            model: 'CareUnits',            key: 'id'        },        onUpdate: 'CASCADE',        onDelete: 'CASCADE'      },      startTime: {        type: Sequelize.DATE      },      endTime: {        type: Sequelize.DATE      },      reason: {        type: Sequelize.STRING      },      channel: {        type: Sequelize.ENUM('presencial', 'virtual'),         allowNull: false      },      status: {        type: Sequelize.ENUM('solicitada', 'confirmada', 'cumplida', 'cancelada', 'no asistio'),        allowNull: false,        defaultValue: 'Solicitada'      },      observations: {        type: Sequelize.STRING      },      createdAt: {        allowNull: false,        type: Sequelize.DATE      },      updatedAt: {        allowNull: false,        type: Sequelize.DATE      }    });  },  async down(queryInterface, Sequelize) {    await queryInterface.dropTable('Appointments');  }};
+'use strict';
+module.exports = {
+  async up(queryInterface, Sequelize) {
+    await queryInterface.createTable('Appointments', {
+      id: {
+        allowNull: false,
+        autoIncrement: true,
+        primaryKey: true,
+        type: Sequelize.INTEGER
+      },
+      peopleId: {
+        type: Sequelize.INTEGER,
+        allowNull: false,
+        references: {
+            model: 'PeopleAttendeds',
+            key: 'id'
+        },
+        onUpdate: 'CASCADE',
+        onDelete: 'CASCADE'
+      },
+      professionalId: {
+        type: Sequelize.INTEGER,
+        allowNull: false,
+        references: {
+            model: 'Profesionals',
+            key: 'id'
+        },
+        onUpdate: 'CASCADE',
+        onDelete: 'CASCADE'
+      },
+      scheduleId: {
+        type: Sequelize.INTEGER,
+        allowNull: true,
+        references: {
+            model: 'Schedules',
+            key: 'id'
+        },
+        onUpdate: 'CASCADE',
+        onDelete: 'SET NULL'
+      },
+      unitId: {
+        type: Sequelize.INTEGER,
+        allowNull: false,
+        references: {
+            model: 'CareUnits',
+            key: 'id'
+        },
+        onUpdate: 'CASCADE',
+        onDelete: 'CASCADE'
+      },
+      startTime: {
+        type: Sequelize.DATE
+      },
+      endTime: {
+        type: Sequelize.DATE
+      },
+      reason: {
+        type: Sequelize.STRING
+      },
+      channel: {
+        type: Sequelize.ENUM('presencial', 'virtual'), 
+        allowNull: false
+      },
+      status: {
+        type: Sequelize.ENUM('solicitada', 'confirmada', 'cumplida', 'cancelada', 'no asistio'),
+        allowNull: false,
+        defaultValue: 'solicitada'
+      },
+      observations: {
+        type: Sequelize.STRING
+      },
+      createdAt: {
+        allowNull: false,
+        type: Sequelize.DATE
+      },
+      updatedAt: {
+        allowNull: false,
+        type: Sequelize.DATE
+      }
+    });
+  },
+  async down(queryInterface, Sequelize) {
+    await queryInterface.dropTable('Appointments');
+  }
+};

@@ -73,10 +73,7 @@ class SmartSchedulingService {
 
     } catch (error) {
       console.error("❌ Error en SmartSchedulingService:", error);
-      return { 
-        error: "Error procesando la solicitud con IA", 
-        details: error.message 
-      };
+      throw error;
     }
   }
 }

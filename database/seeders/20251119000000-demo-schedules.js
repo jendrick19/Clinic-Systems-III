@@ -26,13 +26,13 @@ module.exports = {
 
     const unitId = careUnit[0].id;
 
-    // Crear agendas para el único odontólogo
-    const schedules = [
+    // Crear agendas para el único odontólogo (Enero 2026)
+    const schedulesToCreate = [
       {
         professionalId: professionalId,
         unitId: unitId,
-        startTime: new Date('2025-12-01 08:00:00'),
-        endTime: new Date('2025-12-01 16:00:00'),
+        startTime: new Date('2026-01-05 08:00:00'),
+        endTime: new Date('2026-01-05 16:00:00'),
         capacity: 20,
         status: 'abierta',
         createdAt: now,
@@ -41,8 +41,8 @@ module.exports = {
       {
         professionalId: professionalId,
         unitId: unitId,
-        startTime: new Date('2025-12-02 09:00:00'),
-        endTime: new Date('2025-12-02 15:00:00'),
+        startTime: new Date('2026-01-06 09:00:00'),
+        endTime: new Date('2026-01-06 15:00:00'),
         capacity: 15,
         status: 'abierta',
         createdAt: now,
@@ -51,8 +51,8 @@ module.exports = {
       {
         professionalId: professionalId,
         unitId: unitId,
-        startTime: new Date('2025-12-03 07:00:00'),
-        endTime: new Date('2025-12-03 19:00:00'),
+        startTime: new Date('2026-01-07 07:00:00'),
+        endTime: new Date('2026-01-07 19:00:00'),
         capacity: 30,
         status: 'reservada',
         createdAt: now,
@@ -61,8 +61,8 @@ module.exports = {
       {
         professionalId: professionalId,
         unitId: unitId,
-        startTime: new Date('2025-12-04 08:00:00'),
-        endTime: new Date('2025-12-04 16:00:00'),
+        startTime: new Date('2026-01-08 08:00:00'),
+        endTime: new Date('2026-01-08 16:00:00'),
         capacity: 10,
         status: 'abierta',
         createdAt: now,
@@ -71,16 +71,32 @@ module.exports = {
       {
         professionalId: professionalId,
         unitId: unitId,
-        startTime: new Date('2025-12-05 10:00:00'),
-        endTime: new Date('2025-12-05 14:00:00'),
+        startTime: new Date('2026-01-09 10:00:00'),
+        endTime: new Date('2026-01-09 14:00:00'),
         capacity: 8,
         status: 'cerrada',
         createdAt: now,
         updatedAt: now,
       },
     ];
-    await queryInterface.bulkInsert('Schedules', schedules, {});
-    console.log('✅ Seeder ejecutado: 5 agendas creadas para el odontólogo');
+
+    const toInsert = [];
+    for (const schedule of schedulesToCreate) {
+      const existing = await queryInterface.sequelize.query(
+        `SELECT id FROM Schedules WHERE professionalId = ${schedule.professionalId} AND startTime = '${schedule.startTime.toISOString().slice(0, 19).replace('T', ' ')}'`,
+        { type: Sequelize.QueryTypes.SELECT }
+      );
+      if (existing.length === 0) {
+        toInsert.push(schedule);
+      }
+    }
+
+    if (toInsert.length > 0) {
+      await queryInterface.bulkInsert('Schedules', toInsert, {});
+      console.log(`✅ Seeder ejecutado: ${toInsert.length} agendas creadas para el odontólogo`);
+    } else {
+      console.log('⚠️ Las agendas ya existen, omitiendo creación');
+    }
   },
   async down(queryInterface, Sequelize) {
     // Eliminar agendas del odontólogo OD-01

@@ -2,7 +2,7 @@
 
 module.exports = {
   async up(queryInterface, Sequelize) {
-    await queryInterface.bulkInsert('Insurers', [
+    const insurers = [
       {
         nombre: 'Seguros Bolívar',
         nit: 'J-30045626-7',
@@ -51,7 +51,25 @@ module.exports = {
         createdAt: new Date(),
         updatedAt: new Date()
       },
-    ], {});
+    ];
+
+    const toInsert = [];
+    for (const insurer of insurers) {
+      const existing = await queryInterface.sequelize.query(
+        `SELECT id FROM Insurers WHERE nit = '${insurer.nit}'`,
+        { type: Sequelize.QueryTypes.SELECT }
+      );
+      if (existing.length === 0) {
+        toInsert.push(insurer);
+      }
+    }
+
+    if (toInsert.length > 0) {
+      await queryInterface.bulkInsert('Insurers', toInsert, {});
+      console.log(`✅ Seeder ejecutado: ${toInsert.length} aseguradoras creadas`);
+    } else {
+      console.log('⚠️ Las aseguradoras ya existen, omitiendo creación');
+    }
   },
 
   async down(queryInterface, Sequelize) {
