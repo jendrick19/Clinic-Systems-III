@@ -6,6 +6,7 @@ const {
   softDeleteProfessional,
 } = require('../services/ProfessionalService');
 
+// Mapea el modelo de BD a la respuesta JSON que ve el usuario
 const mapModelToResponse = (professional) => {
   if (!professional) {
     return null;
@@ -24,18 +25,19 @@ const mapModelToResponse = (professional) => {
   };
 };
 
+// Mapea el body del request a los datos del Profesional
 const mapRequestToCreate = (body) => {
-  
   const payload = {
     names: body.nombres,
     surNames: body.apellidos,
-    professionalRegister: body.registroProfesional,
+    professionalRegister: body.registroProfesional, // Importante: Este campo se usará como Username
     specialty: body.especialidad,
     email: body.correo,
   };
 
   if (body.userId !== undefined) payload.userId = Number(body.userId);
   if (body.telefono !== undefined) payload.phone = body.telefono;
+  
   if (body.agendaHabilitada !== undefined) {
     if (typeof body.agendaHabilitada === 'string') {
       payload.scheduleEnabled = ['true', '1', 'activo', 'active'].includes(body.agendaHabilitada.toLowerCase());
@@ -56,7 +58,6 @@ const mapRequestToCreate = (body) => {
 };
 
 const mapRequestToUpdate = (body) => {
-  
   const payload = {};
   
   if (body.userId !== undefined) payload.userId = Number(body.userId);
@@ -66,6 +67,7 @@ const mapRequestToUpdate = (body) => {
   if (body.especialidad !== undefined) payload.specialty = body.especialidad;
   if (body.correo !== undefined) payload.email = body.correo;
   if (body.telefono !== undefined) payload.phone = body.telefono;
+  
   if (body.agendaHabilitada !== undefined) {
     if (typeof body.agendaHabilitada === 'string') {
       payload.scheduleEnabled = ['true', '1', 'activo', 'active'].includes(body.agendaHabilitada.toLowerCase());
@@ -83,15 +85,20 @@ const mapRequestToUpdate = (body) => {
   return payload;
 };
 
+// Mapea los datos del Usuario (Login) desde el request
 const mapUserFromRequest = (body) => {
   const userData = {};
+  
+  // El frontend envía la estructura "usuario": { password: "...", email: "..." }
   if (body.usuario) {
     if (body.usuario.username !== undefined) userData.username = body.usuario.username;
     if (body.usuario.email !== undefined) userData.email = body.usuario.email;
+    
+    // CORRECCIÓN CLAVE: Mapeamos 'password' correctamente para que el servicio lo reciba
     if (body.usuario.password !== undefined) {
-      userData.passwordHash = body.usuario.password;
+      userData.password = body.usuario.password;
     }
-    if (body.usuario.passwordHash !== undefined) userData.passwordHash = body.usuario.passwordHash;
+    
     if (body.usuario.estado !== undefined) {
       if (typeof body.usuario.estado === 'string') {
         userData.status = ['true', '1', 'activo', 'active'].includes(body.usuario.estado.toLowerCase());
@@ -103,6 +110,8 @@ const mapUserFromRequest = (body) => {
 
   return userData;
 };
+
+// Handlers
 
 const listHandler = async (req, res, next) => {
   try {
@@ -157,13 +166,18 @@ const createHandler = async (req, res, next) => {
   try {
     const professionalData = mapRequestToCreate(req.body);
     const userData = mapUserFromRequest(req.body);
+    
+    // Valores por defecto
     if (professionalData.status === undefined) {
       professionalData.status = true;
     }
     if (professionalData.scheduleEnabled === undefined) {
       professionalData.scheduleEnabled = false;
     }
+
+    // Llamada al servicio (que creará Usuario y Profesional)
     const result = await createProfessional(professionalData, userData);
+    
     return res.status(201).json({
       codigo: 201,
       mensaje: 'Profesional creado exitosamente',
@@ -178,6 +192,7 @@ const createHandler = async (req, res, next) => {
       },
     });
   } catch (error) {
+    console.error('Error creando profesional:', error); // Log para depuración
     return next(error);
   }
 };

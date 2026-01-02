@@ -1,7 +1,6 @@
 <template>
   <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-cyan-50 via-white to-teal-50 p-4 py-8">
     <div class="w-full max-w-md">
-      <!-- Logo y Header -->
       <div class="text-center mb-8">
         <div class="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-cyan-500 to-teal-500 rounded-2xl mb-4 shadow-lg">
           <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -16,11 +15,38 @@
         </p>
       </div>
 
-      <!-- Card de Registro -->
       <div class="bg-white rounded-3xl shadow-xl border border-cyan-100 p-8">
+        
+        <div class="flex gap-2 mb-6 bg-slate-100 p-1 rounded-xl">
+          <button
+            type="button"
+            @click="userType = 'patient'"
+            :class="[
+              'flex-1 py-2 px-4 rounded-lg font-medium transition-all duration-200',
+              userType === 'patient'
+                ? 'bg-white text-cyan-600 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            ]"
+          >
+            Paciente
+          </button>
+          <button
+            type="button"
+            @click="userType = 'professional'"
+            :class="[
+              'flex-1 py-2 px-4 rounded-lg font-medium transition-all duration-200',
+              userType === 'professional'
+                ? 'bg-white text-cyan-600 shadow-sm'
+                : 'text-slate-600 hover:text-slate-900'
+            ]"
+          >
+            Profesional
+          </button>
+        </div>
+
         <div class="mb-6">
           <h2 class="text-2xl font-semibold text-slate-900 mb-2">
-            Registro de Paciente
+            Registro de {{ userType === 'patient' ? 'Paciente' : 'Profesional' }}
           </h2>
           <p class="text-sm text-slate-500">
             Completa tus datos para crear tu cuenta
@@ -28,174 +54,97 @@
         </div>
 
         <form @submit.prevent="handleRegister" class="space-y-5">
-          <!-- Nombres -->
+          
           <div>
-            <label for="nombres" class="block text-sm font-medium text-slate-700 mb-2">
-              Nombres *
-            </label>
-            <input
-              id="nombres"
-              v-model="formData.names"
-              type="text"
-              placeholder="Juan Carlos"
-              class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all outline-none"
-              required
-            />
+            <label class="block text-sm font-medium text-slate-700 mb-2">Nombres *</label>
+            <input v-model="formData.names" type="text" placeholder="Juan Carlos" class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all outline-none" required />
           </div>
 
-          <!-- Apellidos -->
           <div>
-            <label for="apellidos" class="block text-sm font-medium text-slate-700 mb-2">
-              Apellidos *
-            </label>
-            <input
-              id="apellidos"
-              v-model="formData.surNames"
-              type="text"
-              placeholder="Pérez González"
-              class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all outline-none"
-              required
-            />
+            <label class="block text-sm font-medium text-slate-700 mb-2">Apellidos *</label>
+            <input v-model="formData.surNames" type="text" placeholder="Pérez González" class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all outline-none" required />
           </div>
 
-          <!-- Tipo de Documento -->
-          <div>
-            <label for="documentType" class="block text-sm font-medium text-slate-700 mb-2">
-              Tipo de Documento *
-            </label>
-            <select
-              id="documentType"
-              v-model="formData.documentType"
-              class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all outline-none"
-              required
-            >
-              <option value="">Selecciona un tipo</option>
-              <option value="cedula">Cédula</option>
-              <option value="rif">RIF</option>
-              <option value="pasaporte">Pasaporte</option>
-              <option value="extranjero">Extranjero (E)</option>
-              <option value="otro">Otro</option>
-            </select>
+          <div v-if="userType === 'patient'" class="space-y-5 animate-in fade-in slide-in-from-top-4 duration-300">
+            <div>
+              <label class="block text-sm font-medium text-slate-700 mb-2">Tipo de Documento *</label>
+              <select v-model="formData.documentType" class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all outline-none" required>
+                <option value="">Selecciona un tipo</option>
+                <option value="cedula">Venezolano</option>
+                <option value="rif">RIF</option>
+                <option value="pasaporte">Pasaporte</option>
+                <option value="extranjero">Extranjero (E)</option>
+                <option value="otro">Otro</option>
+              </select>
+            </div>
+
+            <div>
+              <label class="block text-sm font-medium text-slate-700 mb-2">Número de Documento *</label>
+              <input v-model="formData.documentId" type="text" placeholder="12345678" class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all outline-none" required />
+            </div>
+
+            <div class="grid grid-cols-2 gap-4">
+               <div>
+                  <label class="block text-sm font-medium text-slate-700 mb-2">Fecha Nacimiento</label>
+                  <input v-model="formData.dateOfBirth" type="date" class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cyan-500 outline-none" />
+               </div>
+               <div>
+                  <label class="block text-sm font-medium text-slate-700 mb-2">Género</label>
+                  <select v-model="formData.gender" class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cyan-500 outline-none">
+                    <option value="">Seleccionar</option>
+                    <option value="m">Masculino</option>
+                    <option value="f">Femenino</option>
+                    <option value="o">Otro</option>
+                  </select>
+               </div>
+            </div>
+            
+            <div>
+               <label class="block text-sm font-medium text-slate-700 mb-2">Dirección</label>
+               <input v-model="formData.address" type="text" class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cyan-500 outline-none" />
+            </div>
           </div>
 
-          <!-- Número de Documento -->
-          <div>
-            <label for="documentId" class="block text-sm font-medium text-slate-700 mb-2">
-              Número de Documento *
-            </label>
-            <input
-              id="documentId"
-              v-model="formData.documentId"
-              type="text"
-              placeholder="12345678"
-              class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all outline-none"
-              required
-            />
+          <div v-if="userType === 'professional'" class="space-y-5 animate-in fade-in slide-in-from-top-4 duration-300">
+            <div>
+              <label class="block text-sm font-medium text-slate-700 mb-2">Registro Profesional *</label>
+              <input v-model="formData.professionalRegister" type="text" placeholder="MPPS-12345" class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cyan-500 outline-none uppercase" required />
+              <p class="text-xs text-slate-500 mt-1">Este será tu usuario para ingresar</p>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-slate-700 mb-2">Especialidad *</label>
+              <select v-model="formData.specialty" class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cyan-500 outline-none" required>
+                <option value="">Selecciona una especialidad</option>
+                <option value="Odontología General">Odontología General</option>
+                <option value="Ortodoncia">Ortodoncia</option>
+                <option value="Endodoncia">Endodoncia</option>
+                <option value="Periodoncia">Periodoncia</option>
+                <option value="Odontopediatría">Odontopediatría</option>
+                <option value="Cirugía Oral y Maxilofacial">Cirugía Oral y Maxilofacial</option>
+                <option value="Prótesis Dental">Prótesis Dental</option>
+                <option value="Implantología">Implantología</option>
+                <option value="Estética Dental">Estética Dental</option>
+                <option value="Patología Oral">Patología Oral</option>
+              </select>
+            </div>
           </div>
 
-          <!-- Correo Electrónico -->
           <div>
-            <label for="email" class="block text-sm font-medium text-slate-700 mb-2">
-              Correo Electrónico *
-            </label>
-            <input
-              id="email"
-              v-model="formData.email"
-              type="email"
-              placeholder="correo@ejemplo.com"
-              class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all outline-none"
-              required
-            />
+            <label class="block text-sm font-medium text-slate-700 mb-2">Correo Electrónico *</label>
+            <input v-model="formData.email" type="email" placeholder="correo@ejemplo.com" class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all outline-none" required />
+          </div>
+          
+          <div>
+            <label class="block text-sm font-medium text-slate-700 mb-2">Teléfono</label>
+            <input v-model="formData.phone" type="tel" placeholder="+58 412 1234567" class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all outline-none" />
           </div>
 
-          <!-- Teléfono -->
           <div>
-            <label for="phone" class="block text-sm font-medium text-slate-700 mb-2">
-              Teléfono
-            </label>
-            <input
-              id="phone"
-              v-model="formData.phone"
-              type="tel"
-              placeholder="+58 412 1234567"
-              class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all outline-none"
-            />
+            <label class="block text-sm font-medium text-slate-700 mb-2">Contraseña *</label>
+            <input v-model="formData.password" type="password" placeholder="••••••••" class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all outline-none" required minlength="6"/>
+            <p class="text-xs text-slate-500 mt-1">Mínimo 6 caracteres</p>
           </div>
 
-          <!-- Fecha de Nacimiento -->
-          <div>
-            <label for="dateOfBirth" class="block text-sm font-medium text-slate-700 mb-2">
-              Fecha de Nacimiento
-            </label>
-            <input
-              id="dateOfBirth"
-              v-model="formData.dateOfBirth"
-              type="date"
-              class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all outline-none"
-            />
-          </div>
-
-          <!-- Género -->
-          <div>
-            <label for="gender" class="block text-sm font-medium text-slate-700 mb-2">
-              Género
-            </label>
-            <select
-              id="gender"
-              v-model="formData.gender"
-              class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all outline-none"
-            >
-              <option value="">Selecciona un género</option>
-              <option value="m">Masculino</option>
-              <option value="f">Femenino</option>
-              <option value="o">Otro</option>
-            </select>
-          </div>
-
-          <!-- Dirección -->
-          <div>
-            <label for="address" class="block text-sm font-medium text-slate-700 mb-2">
-              Dirección
-            </label>
-            <input
-              id="address"
-              v-model="formData.address"
-              type="text"
-              placeholder="Avenida Principal #123"
-              class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all outline-none"
-            />
-          </div>
-
-          <!-- Contacto de Emergencia -->
-          <div>
-            <label for="emergencyContact" class="block text-sm font-medium text-slate-700 mb-2">
-              Contacto de Emergencia
-            </label>
-            <input
-              id="emergencyContact"
-              v-model="formData.emergencyContact"
-              type="text"
-              placeholder="Nombre - Parentesco - Teléfono"
-              class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all outline-none"
-            />
-          </div>
-
-          <!-- Alergias -->
-          <div>
-            <label for="alergias" class="block text-sm font-medium text-slate-700 mb-2">
-              Alergias Conocidas
-            </label>
-            <textarea
-              id="alergias"
-              v-model="formData.alergias"
-              rows="3"
-              placeholder="Ej: Polen, Polvo, Penicilina..."
-              class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all outline-none resize-none"
-            ></textarea>
-            <p class="text-xs text-slate-500 mt-1">Separa las alergias por comas si hay más de una</p>
-          </div>
-
-          <!-- Mensaje de Error -->
           <div v-if="errorMessage" class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm flex items-start gap-2">
             <svg class="w-5 h-5 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
               <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
@@ -203,8 +152,6 @@
             <span>{{ errorMessage }}</span>
           </div>
 
-
-          <!-- Botones -->
           <div class="space-y-3 pt-2">
             <button
               type="submit"
@@ -229,69 +176,65 @@
         </form>
       </div>
 
-      <!-- Footer -->
       <p class="text-center text-sm text-slate-500 mt-6">
         Ya tienes cuenta? <button @click="$emit('show-login')" class="text-cyan-600 hover:text-cyan-700 font-medium">Inicia sesión aquí</button>
       </p>
     </div>
 
-    <!-- Modal de Éxito -->
     <div
       v-if="showSuccessModal"
-      class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+      class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 backdrop-blur-sm"
       @click.self="handleAcceptAndRedirect"
     >
       <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 animate-in fade-in zoom-in duration-200">
-        <!-- Icono de éxito -->
         <div class="flex justify-center mb-4">
-          <div class="w-16 h-16 bg-gradient-to-br from-teal-500 to-cyan-500 rounded-full flex items-center justify-center">
+          <div class="w-16 h-16 bg-gradient-to-br from-teal-500 to-cyan-500 rounded-full flex items-center justify-center shadow-lg">
             <svg class="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
             </svg>
           </div>
         </div>
 
-        <!-- Título -->
         <h3 class="text-2xl font-bold text-slate-900 text-center mb-2">
           ¡Registro Exitoso!
         </h3>
 
-        <!-- Mensaje -->
         <p class="text-slate-600 text-center mb-6">
           Tu cuenta ha sido creada correctamente.
         </p>
 
-        <!-- Información de Login -->
         <div class="bg-gradient-to-r from-cyan-50 to-teal-50 rounded-xl p-4 mb-6 border border-cyan-200">
           <p class="text-sm text-slate-600 mb-3 text-center font-medium">
-            Para iniciar sesión usa tu documento de identidad:
+            Tus credenciales de acceso:
           </p>
-          <div class="bg-white rounded-lg p-3 mb-2">
-            <p class="text-xs text-slate-500 text-center mb-1">Tipo de Documento:</p>
-            <p class="text-lg font-semibold text-slate-900 text-center capitalize">
-              {{ registeredDocumentType }}
-            </p>
+          
+          <div v-if="registeredUserType === 'patient'" class="bg-white rounded-lg p-3 mb-2 shadow-sm">
+             <p class="text-xs text-slate-500 text-center mb-1">Usuario (Tu Documento):</p>
+             <p class="text-xl font-bold text-cyan-600 text-center font-mono tracking-wide">
+               {{ registeredUsername }}
+             </p>
           </div>
-          <div class="bg-white rounded-lg p-3">
-            <p class="text-xs text-slate-500 text-center mb-1">Número de Documento:</p>
-            <p class="text-2xl font-bold text-cyan-600 text-center font-mono">
-              {{ registeredDocumentNumber }}
-            </p>
+          
+          <div v-if="registeredUserType === 'professional'" class="bg-white rounded-lg p-3 mb-2 shadow-sm">
+             <p class="text-xs text-slate-500 text-center mb-1">Usuario (Registro Profesional):</p>
+             <p class="text-xl font-bold text-cyan-600 text-center font-mono tracking-wide">
+               {{ registeredUsername }}
+             </p>
           </div>
+
           <p class="text-xs text-slate-500 text-center mt-3">
-            Usa estos datos para acceder al sistema
+            Usa este usuario y tu contraseña para ingresar.
           </p>
         </div>
 
-        <!-- Botón Aceptar -->
         <button
           @click="handleAcceptAndRedirect"
           class="w-full bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-600 hover:to-teal-600 text-white font-semibold py-3 px-4 rounded-xl transition-all shadow-lg hover:shadow-xl flex items-center justify-center gap-2"
         >
-          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          <span>Ir a Iniciar Sesión</span>
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
           </svg>
-          <span>Aceptar</span>
         </button>
       </div>
     </div>
@@ -303,49 +246,76 @@ import { ref } from 'vue'
 
 const emit = defineEmits(['register-success', 'show-login'])
 
+const userType = ref('patient') // 'patient' | 'professional'
+const loading = ref(false)
+const errorMessage = ref('')
+const showSuccessModal = ref(false)
+
+// Datos para el modal
+const registeredUserType = ref('')
+const registeredUsername = ref('')
+
 const formData = ref({
   names: '',
   surNames: '',
-  documentType: '',
-  documentId: '',
   email: '',
   phone: '',
+  password: '', // Nuevo campo
+  // Paciente
+  documentType: '',
+  documentId: '',
   dateOfBirth: '',
   gender: '',
   address: '',
   emergencyContact: '',
   alergias: '',
+  // Profesional
+  professionalRegister: '',
+  specialty: ''
 })
-
-const loading = ref(false)
-const errorMessage = ref('')
-const successMessage = ref('')
-const showSuccessModal = ref(false)
-const registeredDocumentType = ref('')
-const registeredDocumentNumber = ref('')
 
 const handleRegister = async () => {
   errorMessage.value = ''
-  successMessage.value = ''
   loading.value = true
 
   try {
-    // Preparar datos para enviar
-    const payload = {
-      nombres: formData.value.names,
-      apellidos: formData.value.surNames,
-      tipoDocumento: formData.value.documentType,
-      numeroDocumento: formData.value.documentId,
-      correo: formData.value.email,
-      telefono: formData.value.phone || undefined,
-      fechaNacimiento: formData.value.dateOfBirth || undefined,
-      sexo: formData.value.gender || undefined,
-      direccion: formData.value.address || undefined,
-      contactoEmergencia: formData.value.emergencyContact || undefined,
-      alergias: formData.value.alergias || undefined,
+    let url = ''
+    let payload = {}
+
+    if (userType.value === 'patient') {
+      url = '/api/operative/personas'
+      // Preparar payload Paciente
+      payload = {
+        nombres: formData.value.names,
+        apellidos: formData.value.surNames,
+        tipoDocumento: formData.value.documentType,
+        numeroDocumento: formData.value.documentId,
+        correo: formData.value.email,
+        password: formData.value.password, // Enviar contraseña
+        telefono: formData.value.phone || undefined,
+        fechaNacimiento: formData.value.dateOfBirth || undefined,
+        sexo: formData.value.gender || undefined,
+        direccion: formData.value.address || undefined
+      }
+    } else {
+      url = '/api/operative/profesionales'
+      // Preparar payload Profesional
+      payload = {
+        nombres: formData.value.names,
+        apellidos: formData.value.surNames,
+        registroProfesional: formData.value.professionalRegister.toUpperCase(),
+        especialidad: formData.value.specialty,
+        correo: formData.value.email,
+        telefono: formData.value.phone || undefined,
+        // Estructura especial para el Controller de Profesionales
+        usuario: {
+          password: formData.value.password,
+          email: formData.value.email
+        }
+      }
     }
 
-    const response = await fetch('/api/operative/personas', {
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -356,29 +326,27 @@ const handleRegister = async () => {
     const data = await response.json()
 
     if (response.ok) {
-      // Guardar datos del documento para mostrar en el modal
-      registeredDocumentType.value = formData.value.documentType
-      registeredDocumentNumber.value = formData.value.documentId
+      // Guardar datos para mostrar en el modal
+      registeredUserType.value = userType.value
       
-      // Limpiar formulario
-      formData.value = {
-        names: '',
-        surNames: '',
-        documentType: '',
-        documentId: '',
-        email: '',
-        phone: '',
-        dateOfBirth: '',
-        gender: '',
-        address: '',
-        emergencyContact: '',
-        alergias: '',
+      if (userType.value === 'patient') {
+         // Generar visualización del usuario (Ej: V123456)
+         let prefix = ''
+         if(formData.value.documentType === 'cedula') prefix = 'V'
+         else if(formData.value.documentType === 'rif') prefix = 'J'
+         else if(formData.value.documentType === 'pasaporte') prefix = 'P'
+         else prefix = 'E'
+         registeredUsername.value = prefix + formData.value.documentId
+      } else {
+         registeredUsername.value = formData.value.professionalRegister.toUpperCase()
       }
 
-      // Mostrar modal de éxito
+      // Limpiar formulario
+      resetForm()
+      
+      // Mostrar modal
       showSuccessModal.value = true
     } else {
-      // Manejar errores de validación
       if (data.errores && Array.isArray(data.errores)) {
         errorMessage.value = data.errores.map(e => e.mensaje).join('. ')
       } else {
@@ -393,16 +361,16 @@ const handleRegister = async () => {
   }
 }
 
+const resetForm = () => {
+  formData.value = {
+    names: '', surNames: '', email: '', phone: '', password: '',
+    documentType: '', documentId: '', dateOfBirth: '', gender: '', address: '', emergencyContact: '', alergias: '',
+    professionalRegister: '', specialty: ''
+  }
+}
+
 const handleAcceptAndRedirect = () => {
   showSuccessModal.value = false
-  emit('register-success', {
-    documentType: registeredDocumentType.value,
-    documentNumber: registeredDocumentNumber.value
-  })
-  // Redirigir al login
   emit('show-login')
 }
 </script>
-
-<style scoped></style>
-

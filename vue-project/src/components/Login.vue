@@ -1,7 +1,6 @@
 <template>
   <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-cyan-50 via-white to-teal-50 p-4">
     <div class="w-full max-w-md">
-      <!-- Logo y Header -->
       <div class="text-center mb-8">
         <div class="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-cyan-500 to-teal-500 rounded-2xl mb-4 shadow-lg">
           <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -16,7 +15,6 @@
         </p>
       </div>
 
-      <!-- Card de Login -->
       <div class="bg-white rounded-3xl shadow-xl border border-cyan-100 p-8">
         <div class="mb-6">
           <h2 class="text-2xl font-semibold text-slate-900 mb-2">
@@ -27,13 +25,12 @@
           </p>
         </div>
 
-        <!-- Selector de Tipo de Usuario -->
         <div class="flex gap-2 mb-6 bg-slate-100 p-1 rounded-xl">
           <button
             type="button"
             @click="userType = 'patient'"
             :class="[
-              'flex-1 py-2 px-4 rounded-lg font-medium transition-all',
+              'flex-1 py-2 px-4 rounded-lg font-medium transition-all duration-200',
               userType === 'patient'
                 ? 'bg-white text-cyan-600 shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
@@ -45,23 +42,22 @@
             type="button"
             @click="userType = 'dentist'"
             :class="[
-              'flex-1 py-2 px-4 rounded-lg font-medium transition-all',
+              'flex-1 py-2 px-4 rounded-lg font-medium transition-all duration-200',
               userType === 'dentist'
                 ? 'bg-white text-cyan-600 shadow-sm'
                 : 'text-slate-600 hover:text-slate-900'
             ]"
           >
-            Odontólogo
+            Profesional
           </button>
         </div>
 
         <form @submit.prevent="handleLogin" class="space-y-6">
-          <!-- Formulario para Paciente -->
-          <div v-if="userType === 'patient'" class="space-y-4">
-            <!-- Tipo de Documento -->
+          
+          <div v-if="userType === 'patient'" class="space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
             <div>
               <label for="documentType" class="block text-sm font-medium text-slate-700 mb-2">
-                Tipo de Documento *
+                Tipo de Documento
               </label>
               <select
                 id="documentType"
@@ -69,19 +65,16 @@
                 class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all outline-none"
                 required
               >
-                <option value="">Selecciona un tipo</option>
-                <option value="cedula">Cédula</option>
+                <option value="cedula">Venezolano</option>
                 <option value="rif">RIF</option>
                 <option value="pasaporte">Pasaporte</option>
                 <option value="extranjero">Extranjero (E)</option>
-                <option value="otro">Otro</option>
               </select>
             </div>
 
-            <!-- Número de Documento -->
             <div>
               <label for="documentNumber" class="block text-sm font-medium text-slate-700 mb-2">
-                Número de Documento *
+                Número de Documento
               </label>
               <div class="relative">
                 <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
@@ -101,11 +94,10 @@
             </div>
           </div>
 
-          <!-- Formulario para Odontólogo -->
-          <div v-if="userType === 'dentist'" class="space-y-4">
+          <div v-if="userType === 'dentist'" class="space-y-4 animate-in fade-in slide-in-from-top-2 duration-300">
             <div>
               <label for="professionalRegister" class="block text-sm font-medium text-slate-700 mb-2">
-                Registro Profesional *
+                Registro Profesional
               </label>
               <div class="relative">
                 <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
@@ -117,16 +109,35 @@
                   id="professionalRegister"
                   v-model="loginData.professionalRegister"
                   type="text"
-                  placeholder="OD-01"
+                  placeholder="MPPS-12345"
                   class="w-full pl-12 pr-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all outline-none uppercase"
                   required
                 />
               </div>
-              <p class="text-xs text-slate-500 mt-1">Ejemplo: OD-01</p>
             </div>
           </div>
 
-          <!-- Mensaje de Error -->
+          <div>
+            <label for="password" class="block text-sm font-medium text-slate-700 mb-2">
+              Contraseña
+            </label>
+            <div class="relative">
+              <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                 <svg class="w-5 h-5 text-cyan-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                 </svg>
+              </div>
+              <input
+                id="password"
+                v-model="loginData.password"
+                type="password"
+                placeholder="••••••••"
+                class="w-full pl-12 pr-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cyan-500 focus:border-transparent transition-all outline-none"
+                required
+              />
+            </div>
+          </div>
+
           <div v-if="errorMessage" class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm flex items-start gap-2">
             <svg class="w-5 h-5 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
               <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
@@ -134,7 +145,6 @@
             <span>{{ errorMessage }}</span>
           </div>
 
-          <!-- Mensaje de Éxito -->
           <div v-if="successMessage" class="bg-teal-50 border border-teal-200 text-teal-700 px-4 py-3 rounded-xl text-sm flex items-start gap-2">
             <svg class="w-5 h-5 mt-0.5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
               <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
@@ -142,7 +152,6 @@
             <span>{{ successMessage }}</span>
           </div>
 
-          <!-- Botón de Login -->
           <button
             type="submit"
             :disabled="loading"
@@ -156,7 +165,6 @@
           </button>
         </form>
 
-        <!-- Divisor -->
         <div class="relative my-6">
           <div class="absolute inset-0 flex items-center">
             <div class="w-full border-t border-slate-200"></div>
@@ -166,7 +174,6 @@
           </div>
         </div>
 
-        <!-- Botón Registro -->
         <button
           @click="$emit('show-register')"
           class="w-full bg-slate-50 hover:bg-slate-100 text-slate-700 font-medium py-3 px-4 rounded-xl transition-all border border-slate-200 hover:border-slate-300"
@@ -175,7 +182,6 @@
         </button>
       </div>
 
-      <!-- Footer -->
       <p class="text-center text-sm text-slate-500 mt-6">
         Sistema con IA · Agendamiento Automatizado
       </p>
@@ -190,9 +196,10 @@ const emit = defineEmits(['login-success', 'show-register'])
 
 const userType = ref('patient') // 'patient' o 'dentist'
 const loginData = ref({
-  documentType: '',
+  documentType: 'cedula',
   documentNumber: '',
   professionalRegister: '',
+  password: '' // Nuevo campo
 })
 const loading = ref(false)
 const errorMessage = ref('')
@@ -204,17 +211,15 @@ const handleLogin = async () => {
   loading.value = true
 
   try {
-    let body = {}
+    let body = {
+      password: loginData.value.password // Siempre enviar contraseña
+    }
     
     if (userType.value === 'dentist') {
-      body = {
-        professionalRegister: loginData.value.professionalRegister.toUpperCase().trim()
-      }
+      body.professionalRegister = loginData.value.professionalRegister.toUpperCase().trim()
     } else {
-      body = {
-        tipoDocumento: loginData.value.documentType,
-        numeroDocumento: loginData.value.documentNumber.trim()
-      }
+      body.tipoDocumento = loginData.value.documentType
+      body.numeroDocumento = loginData.value.documentNumber.trim()
     }
 
     const response = await fetch('/api/platform/auth/login', {
@@ -230,15 +235,15 @@ const handleLogin = async () => {
     if (response.ok) {
       successMessage.value = `¡Bienvenido, ${data.data.nombre}!`
       
-      // Guardar datos del usuario en localStorage
+      // Guardar datos del usuario
       localStorage.setItem('user', JSON.stringify({
         id: data.data.id,
         nombre: data.data.nombre,
-        tipo: data.tipo,
+        tipo: data.tipo, // 'client' o 'admin'
         data: data.data,
       }))
 
-      // Emitir evento de éxito después de un breve delay
+      // Emitir evento de éxito
       setTimeout(() => {
         emit('login-success', {
           tipo: data.tipo,
@@ -249,16 +254,10 @@ const handleLogin = async () => {
       errorMessage.value = data.mensaje || 'Error al iniciar sesión'
     }
   } catch (error) {
-    if (error.message && error.message.includes('fetch')) {
-      errorMessage.value = 'Error de conexión con el servidor. Verifica que el backend esté corriendo.'
-    } else {
-      errorMessage.value = 'Error de conexión. Por favor intenta nuevamente.'
-    }
+    errorMessage.value = 'Error de conexión con el servidor.'
     console.error('Login error:', error)
   } finally {
     loading.value = false
   }
 }
 </script>
-
-<style scoped></style>

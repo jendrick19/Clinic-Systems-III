@@ -1,63 +1,101 @@
-const professionalRepository = require('../../operative/repositories/ProfessionalRepository');
-const peopleRepository = require('../../operative/repositories/PeopleRepository');
-const { NotFoundError } = require('../../../shared/errors/CustomErrors');
+// fileName: src/modules/platform/services/AuthService.js
+const bcrypt = require('bcryptjs');
+const db = require('../../../../database/models');
+const { User } = db.modules.platform;
+const { Professional, PeopleAttended } = db.modules.operative;
+const { NotFoundError, BusinessLogicError } = require('../../../shared/errors/CustomErrors');
 
-/**
- * Busca un usuario por professionalRegister (odontólogos) o por documentType + documentId (pacientes)
- * @param {string} documentType - Tipo de documento (para pacientes) o null (para odontólogos)
- * @param {string} identifier - professionalRegister (para odontólogos) o documentId (para pacientes)
- * @returns {Promise<{type: 'admin'|'client', data: object}>}
- */
-const loginByIdentifier = async (documentType, identifier) => {
+const loginByIdentifier = async (documentType, identifier, password) => {
   const identifierStr = String(identifier).trim().toUpperCase();
+
+  // 1. Construir el Username exacto tal cual está en la base de datos Users
+  let usernameToFind = identifierStr;
   
-  // Si no hay documentType, es un odontólogo buscando por professionalRegister
-  if (!documentType || documentType === '') {
-    const professional = await professionalRepository.findByProfessionalRegister(identifierStr);
+  if (documentType) {
+    // Es un paciente, debemos agregar el prefijo según tu regla
+    let prefix = '';
+    const docTypeLower = documentType.toLowerCase();
     
-    if (professional && professional.status) {
-      return {
-        type: 'admin',
-        data: {
-          id: professional.id,
-          userId: professional.userId,
-          nombre: `${professional.names} ${professional.surNames}`,
-          email: professional.email,
-          professionalRegister: professional.professionalRegister,
-          specialty: professional.specialty,
-        },
-      };
-    }
+    // Mapeo de prefijos actualizado
+    if (docTypeLower === 'cedula') prefix = 'V'; // Venezolano
+    else if (docTypeLower === 'extranjero') prefix = 'E'; // Extranjero
+    else if (docTypeLower === 'rif') prefix = 'J'; // RIF (Jurídico es J por estándar, si prefieres R cámbialo aquí)
+    else if (docTypeLower === 'pasaporte') prefix = 'P'; // Pasaporte
+    else prefix = 'V'; // Default
     
-    throw new NotFoundError('Odontólogo no encontrado con el registro profesional proporcionado');
+    // Limpiamos si el usuario ya escribió el prefijo (ej: V-12345)
+    // Eliminamos cualquier letra inicial seguida de guion o sin guion para quedarnos solo con el numero
+    const cleanNumber = identifierStr.replace(/^[VEJPRG]-?|[VEJPRG]/, ''); 
+    
+    usernameToFind = `${prefix}${cleanNumber}`;
+  } 
+  // Si no hay documentType, asumimos que es Profesional y el username es el registro tal cual (ej: MPPS-123)
+
+  console.log(`[Auth] Intentando login con usuario: ${usernameToFind}`);
+
+  // 2. VALIDACIÓN ESTRICTA: Buscar SOLO en la tabla Users
+  const user = await User.findOne({ where: { username: usernameToFind } });
+  
+  if (!user) {
+    throw new NotFoundError(`Usuario no encontrado: ${usernameToFind}`);
   }
 
-  // Si hay documentType, es un paciente buscando por documentType + documentId
-  // Normalizar el tipo de documento
-  const normalizedDocType = documentType.toLowerCase();
-  const validDocTypes = ['cedula', 'rif', 'pasaporte', 'extranjero', 'otro'];
-  
-  if (!validDocTypes.includes(normalizedDocType)) {
-    throw new NotFoundError('Tipo de documento inválido');
+  if (!user.status) {
+    throw new BusinessLogicError('El usuario está inactivo');
   }
 
-  const person = await peopleRepository.findByDocument(normalizedDocType, identifierStr);
+  // 3. Verificar Contraseña
+  const isMatch = await bcrypt.compare(password, user.passwordHash);
+  if (!isMatch) {
+    throw new BusinessLogicError('Credenciales inválidas (contraseña incorrecta)');
+  }
+
+  // 4. Buscar Datos del Perfil (Paciente o Profesional)
+  // Intentamos buscar primero como Profesional vinculado
+  const professional = await Professional.findOne({ where: { userId: user.id } });
   
-  if (person && person.status) {
+  if (professional) {
     return {
-      type: 'client',
+      type: 'admin',
       data: {
-        id: person.id,
-        nombre: `${person.names} ${person.surNames}`,
-        documentType: person.documentType,
-        documentId: person.documentId,
-        email: person.email,
-        phone: person.phone,
+        id: professional.id,
+        userId: user.id,
+        nombre: `${professional.names} ${professional.surNames}`,
+        email: professional.email,
+        professionalRegister: professional.professionalRegister,
+        specialty: professional.specialty,
+        role: 'professional'
       },
     };
   }
 
-  throw new NotFoundError('Paciente no encontrado con el documento proporcionado');
+  // Si no es profesional, buscamos como Paciente usando el número de documento
+  // Extraemos el número del username (quitamos la primera letra: V123 -> 123)
+  const docIdFromUser = usernameToFind.substring(1); 
+  
+  const person = await PeopleAttended.findOne({ 
+    where: { 
+      documentId: docIdFromUser 
+    } 
+  });
+
+  if (person) {
+    return {
+      type: 'client',
+      data: {
+        id: person.id,
+        userId: user.id,
+        nombre: `${person.names} ${person.surNames}`,
+        documentType: person.documentType,
+        documentId: person.documentId,
+        email: person.email,
+        role: 'patient'
+      },
+    };
+  }
+
+  // Si llegamos aquí, existe el usuario pero no su perfil operativo
+  throw new BusinessLogicError('Usuario autenticado pero sin perfil de paciente/médico asociado');
 };
 
 module.exports = {

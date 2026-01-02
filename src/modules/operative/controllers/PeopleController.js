@@ -24,6 +24,7 @@ const mapModelToResponse = (person) => {
     contactoEmergencia: person.emergencyContact,
     alergias: person.alergias,
     estado: person.status,
+    
   };
 };
 
@@ -34,6 +35,7 @@ const mapRequestToCreate = (body) => {
     documentId: body.numeroDocumento,
     names: body.nombres,
     surNames: body.apellidos,
+    password: body.password
   };
 
   // Campos opcionales
