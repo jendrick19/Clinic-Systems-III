@@ -5,9 +5,19 @@ const { loginByIdentifier } = require('../services/AuthService');
  */
 const loginHandler = async (req, res, next) => {
   try {
-    const { tipoDocumento, numeroDocumento, professionalRegister } = req.body;
+    // Extraemos password junto con los otros campos
+    const { tipoDocumento, numeroDocumento, professionalRegister, password } = req.body;
 
-    // Si viene professionalRegister, es un odontólogo
+    // Validacion inicial de contraseña
+    if (!password) {
+      return res.status(400).json({
+        codigo: 400,
+        mensaje: 'La contraseña es obligatoria',
+        tipo: 'ValidationError',
+      });
+    }
+
+    // CASO 1: Si viene professionalRegister, es un odontólogo
     if (professionalRegister) {
       if (!professionalRegister.trim()) {
         return res.status(400).json({
@@ -17,7 +27,9 @@ const loginHandler = async (req, res, next) => {
         });
       }
 
-      const result = await loginByIdentifier(null, professionalRegister);
+      // Llamamos al servicio con la contraseña
+      const result = await loginByIdentifier(null, professionalRegister, password);
+      
       return res.json({
         codigo: 200,
         mensaje: 'Login exitoso',
@@ -26,7 +38,7 @@ const loginHandler = async (req, res, next) => {
       });
     }
 
-    // Si viene tipoDocumento y numeroDocumento, es un paciente
+    // CASO 2: Si viene tipoDocumento y numeroDocumento, es un paciente
     if (tipoDocumento && numeroDocumento) {
       if (!tipoDocumento.trim() || !numeroDocumento.trim()) {
         return res.status(400).json({
@@ -36,7 +48,9 @@ const loginHandler = async (req, res, next) => {
         });
       }
 
-      const result = await loginByIdentifier(tipoDocumento, numeroDocumento);
+      // Llamamos al servicio con la contraseña
+      const result = await loginByIdentifier(tipoDocumento, numeroDocumento, password);
+      
       return res.json({
         codigo: 200,
         mensaje: 'Login exitoso',
@@ -45,11 +59,13 @@ const loginHandler = async (req, res, next) => {
       });
     }
 
+    // Si no cumple ninguno de los casos anteriores
     return res.status(400).json({
       codigo: 400,
       mensaje: 'Debe proporcionar: professionalRegister (odontólogo) o tipoDocumento + numeroDocumento (paciente)',
       tipo: 'ValidationError',
     });
+
   } catch (error) {
     // Log del error para debugging
     console.error('Error en login:', error);
@@ -60,4 +76,3 @@ const loginHandler = async (req, res, next) => {
 module.exports = {
   loginHandler,
 };
-

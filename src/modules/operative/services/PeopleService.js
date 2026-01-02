@@ -1,7 +1,9 @@
+// fileName: src/modules/operative/services/PeopleService.js
 const { Op } = require('sequelize');
+const bcrypt = require('bcryptjs'); 
 const peopleRepository = require('../repositories/PeopleRepository');
 const { buildPaginationParams, buildPaginationResponse } = require('../../../shared/utils/paginationHelper');
-const { NotFoundError, ConflictError, BusinessLogicError } = require('../../../shared/errors/CustomErrors');
+const { NotFoundError, ConflictError } = require('../../../shared/errors/CustomErrors');
 
 const SORT_FIELDS = {
   nombres: 'names',
@@ -67,13 +69,7 @@ const buildWhere = ({ tipoDocumento, numeroDocumento, edad, sexo, nombres, apell
   return where;
 };
 
-const listPeople = async ({
-  page,
-  limit,
-  filters,
-  sortBy,
-  sortOrder,
-}) => {
+const listPeople = async ({ page, limit, filters, sortBy, sortOrder }) => {
   const { safePage, safeLimit, offset } = buildPaginationParams(page, limit);
   const orderField = SORT_FIELDS[sortBy] || SORT_FIELDS.apellidos;
   const orderDirection = sortOrder === 'desc' ? 'DESC' : 'ASC';
@@ -107,7 +103,32 @@ const createPerson = async (payload) => {
       );
     }
   }
-  return peopleRepository.create(payload);
+
+  // --- LÓGICA DE PREFIJOS ACTUALIZADA ---
+  let prefix = '';
+  const docType = payload.documentType ? payload.documentType.toLowerCase() : '';
+  
+  if (docType === 'cedula') prefix = 'V'; // Venezolano
+  else if (docType === 'extranjero') prefix = 'E';
+  else if (docType === 'rif') prefix = 'J'; // J para Jurídico/RIF
+  else if (docType === 'pasaporte') prefix = 'P';
+  else prefix = 'V'; // Default
+  
+  const cleanDocId = payload.documentId.toUpperCase().replace(/^[VEJPRG]-?/, ''); 
+  const generatedUsername = `${prefix}${cleanDocId}`;
+  // --------------------------------------
+
+  const plainPassword = payload.password || cleanDocId; 
+  const passwordHash = await bcrypt.hash(plainPassword, 10);
+
+  const userPayload = {
+    username: generatedUsername,
+    email: payload.email,
+    passwordHash: passwordHash
+  };
+
+  const { person } = await peopleRepository.createWithUser(payload, userPayload);
+  return person;
 };
 
 const updatePerson = async (id, payload) => {
@@ -132,6 +153,7 @@ const softDeletePerson = async (id) => {
   person.status = false;
   return peopleRepository.save(person);
 };
+
 module.exports = {
   listPeople,
   getPersonById,

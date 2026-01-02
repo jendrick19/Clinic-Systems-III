@@ -9,47 +9,35 @@ class IAController {
 
       if (!query || !professionalId) {
         return res.status(400).json({ 
-          error: 'Se requiere "query" (texto del usuario) y "professionalId".' 
+          success: false,
+          message: 'Se requiere "query" (texto del usuario) y "professionalId".' 
         });
       }
 
       let recommendations;
+
+      // Lógica estricta: Si es OpenAI, usa OpenAI. Si es Gemini, usa Gemini.
+      // SIN FALLBACKS automáticos que mezclen los errores.
       if (provider === 'openai') {
-        try {
-          recommendations = await openAIService.recommendSlots(query, professionalId);
-        } catch (err) {
-          console.warn('[IAController] OpenAI falló, aplicando fallback a Gemini:', err.message || err);
-          // intentar fallback con Gemini (servicio interno)
-          recommendations = await smartSchedulingService.recommendSlots(query, professionalId);
-          // si queremos indicar que fue fallback, podemos envolver la respuesta
-          if (!Array.isArray(recommendations)) {
-            recommendations = { fallback: true, data: recommendations };
-          } else {
-            recommendations = { fallback: true, data: recommendations };
-          }
-        }
+        console.log('[IAController] Usando proveedor: OpenAI');
+        recommendations = await openAIService.recommendSlots(query, professionalId);
       } else {
+        console.log('[IAController] Usando proveedor: Google Gemini');
         recommendations = await smartSchedulingService.recommendSlots(query, professionalId);
       }
       
-      // Normalizar respuesta: si hacemos fallback, recommendations puede venir envuelto
-      let responseData = recommendations;
-      let meta = null;
-      if (recommendations && typeof recommendations === 'object' && recommendations.fallback && recommendations.data !== undefined) {
-        responseData = recommendations.data;
-        meta = { fallback: true };
-      }
-
       return res.status(200).json({
         success: true,
-        data: responseData,
-        meta
+        data: recommendations
       });
 
     } catch (error) {
+      console.error('[IAController Error]:', error.message);
+      
+      // Mensaje de error amigable para el frontend
       return res.status(500).json({ 
         success: false, 
-        message: error.message 
+        message: error.message || 'Error interno en el servicio de IA'
       });
     }
   }

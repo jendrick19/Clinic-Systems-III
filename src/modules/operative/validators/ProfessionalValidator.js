@@ -32,16 +32,16 @@ const validateAllowedFields = (allowedFields) => {
 };
 
 const ALLOWED_SPECIALTIES = [
-  'Cardiología',
-  'Pediatría',
-  'Traumatología',
-  'Dermatología',
-  'Neurología',
-  'Oftalmología',
-  'Ginecología',
-  'Psiquiatría',
-  'Medicina General',
-  'Odontología',
+  'Odontología General',
+  'Ortodoncia',
+  'Endodoncia',
+  'Periodoncia',
+  'Odontopediatría',
+  'Cirugía Oral y Maxilofacial',
+  'Prótesis Dental',
+  'Implantología',
+  'Estética Dental',
+  'Patología Oral'
 ];
 
 const checkProfessionalRegisterUniqueness = async (value, { req }) => {
@@ -78,6 +78,7 @@ const checkEmailUniqueness = async (value, { req }) => {
   return true;
 };
 
+// Verifica que el username (que será el registro profesional) no exista en la tabla Users
 const checkUsernameUniqueness = async (value) => {
   const db = require('../../../../database/models');
   const { User } = db.modules.platform;
@@ -85,7 +86,7 @@ const checkUsernameUniqueness = async (value) => {
     where: { username: value },
   });
   if (existingUser) {
-    throw new Error('El nombre de usuario ya está registrado');
+    throw new Error('Este Registro Profesional ya está asociado a un Usuario existente');
   }
   return true;
 };
@@ -94,11 +95,15 @@ const validateCreate = [
   validateAllowedFields(['nombres', 'apellidos', 'registroProfesional', 'especialidad', 'correo', 'telefono', 'agendaHabilitada', 'estado', 'userId', 'usuario']),
   validateNames(),
   validateSurnames(),
+  
+  // AHORA VALIDAMOS EL USUARIO AQUÍ (Usando el Registro Profesional)
   body('registroProfesional')
     .notEmpty().withMessage('El registro profesional es requerido')
     .isLength({ min: 3, max: 50 }).withMessage('El registro profesional debe tener entre 3 y 50 caracteres')
     .matches(/^[A-Z0-9-]+$/).withMessage('El registro profesional solo puede contener letras mayúsculas, números y guiones')
-    .custom(checkProfessionalRegisterUniqueness),
+    .custom(checkProfessionalRegisterUniqueness) // Chequea tabla Professionals
+    .custom(checkUsernameUniqueness),          // Chequea tabla Users (NUEVO)
+
   body('especialidad')
     .notEmpty().withMessage('La especialidad es requerida')
     .isIn(ALLOWED_SPECIALTIES).withMessage(`La especialidad debe ser una de las siguientes: ${ALLOWED_SPECIALTIES.join(', ')}`),
@@ -108,13 +113,10 @@ const validateCreate = [
     .optional()
     .isBoolean().withMessage('agendaHabilitada debe ser verdadero o falso'),
   validateStatus('estado'),
+  
+  // Validaciones del objeto 'usuario' (SIN VALIDAR USERNAME, porque se genera solo)
   body('usuario')
     .notEmpty().withMessage('Los datos del usuario son requeridos'),
-  body('usuario.username')
-    .notEmpty().withMessage('El nombre de usuario es requerido')
-    .isLength({ min: 3, max: 50 }).withMessage('El nombre de usuario debe tener entre 3 y 50 caracteres')
-    .matches(/^[a-zA-Z0-9_]+$/).withMessage('El nombre de usuario solo puede contener letras, números y guiones bajos')
-    .custom(checkUsernameUniqueness),
   body('usuario.email')
     .notEmpty().withMessage('El correo del usuario es requerido')
     .isEmail().withMessage('El correo del usuario debe ser una dirección válida')
@@ -126,6 +128,7 @@ const validateCreate = [
   body('usuario.estado')
     .optional()
     .isBoolean().withMessage('El estado del usuario debe ser verdadero o falso'),
+  
   handleValidationErrors,
 ];
 

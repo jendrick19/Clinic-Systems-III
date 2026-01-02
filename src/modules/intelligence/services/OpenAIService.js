@@ -2,132 +2,166 @@ const OpenAI = require("openai");
 const { Op } = require("sequelize");
 const db = require("../../../../database/models");
 
+const KNOWN_SPECIALTIES = [
+  'Odontología General', 'Ortodoncia', 'Endodoncia', 'Periodoncia', 
+  'Odontopediatría', 'Cirugía Oral', 'Prótesis', 'Implantología', 'Estética'
+];
+
 class OpenAIService {
   constructor() {
-    this.openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
-    });
+    if (!process.env.OPENAI_API_KEY) console.error("⚠️ FALTA OPENAI_API_KEY");
+    this.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   }
 
-  async recommendSlots(userQuery, professionalId) {
+  async recommendSlots(userQuery, defaultProfessionalId) {
     try {
-      console.log(`[OpenAI] Analizando solicitud: "${userQuery}" para profesional ID: ${professionalId}`);
-      
-      const availableSlots = await db.Schedule.findAll({
-        where: {
-          professionalId: professionalId,
-          status: 'abierta', 
-          startTime: {
-            [Op.gt]: new Date()
-          }
-        },
-        attributes: ['id', 'startTime', 'endTime'],
-        order: [['startTime', 'ASC']],
-        limit: 20
-      });
+      console.log(`[IA] Analizando: "${userQuery}"`);
 
-      if (!availableSlots || availableSlots.length === 0) {
-        return { message: "No hay horarios disponibles en el sistema." };
+      const lowerQuery = userQuery.toLowerCase();
+      const targetSpecialty = KNOWN_SPECIALTIES.find(s => lowerQuery.includes(s.toLowerCase()));
+      
+      let professionalsMap = {}; 
+      let professionalIdsToSearch = [];
+
+      // --- 1. SELECCIÓN DE PROFESIONALES ---
+      if (targetSpecialty) {
+        const professionals = await db.Professional.findAll({
+          where: { 
+            specialty: { [Op.like]: `%${targetSpecialty}%` },
+            status: true 
+          }
+        });
+        if (!professionals.length) return { message: `No encontré doctores activos de ${targetSpecialty}.` };
+        
+        professionalIdsToSearch = professionals.map(p => p.id);
+        professionals.forEach(p => professionalsMap[p.id] = `${p.names} ${p.surNames} (${p.specialty})`);
+        
+      } else {
+        const allProfessionals = await db.Professional.findAll({
+          where: { status: true },
+          limit: 10
+        });
+
+        professionalIdsToSearch = allProfessionals.map(p => p.id);
+        allProfessionals.forEach(p => {
+             professionalsMap[p.id] = `${p.names} ${p.surNames} (${p.specialty})`;
+        });
       }
 
-      const slotsString = availableSlots.map(slot => {
-        const date = new Date(slot.startTime);
-        const dateStr = date.toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-        const timeStr = date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
-        return `- ID: ${slot.id} | Fecha: ${dateStr} | Hora: ${timeStr} (ISO: ${slot.startTime.toISOString()})`;
-      }).join('\n');
+      // --- 2. OBTENER HORARIOS DE TRABAJO (SCHEDULES) ---
+      const schedules = await db.Schedule.findAll({
+        where: {
+          professionalId: { [Op.in]: professionalIdsToSearch },
+          status: 'abierta', 
+          startTime: { [Op.gt]: new Date() } 
+        },
+        order: [['startTime', 'ASC']],
+        limit: 20 
+      });
 
-      const systemPrompt = `
-        Actúa como un asistente de agendamiento de citas médicas inteligente.
-        
-        INSTRUCCIONES:
-        1. Analiza la petición del usuario (día, momento del día, urgencia).
-        2. Selecciona las 3 mejores opciones de la lista de "DATOS DISPONIBLES" que coincidan con la petición.
-        3. Si la petición es ambigua, sugiere las próximas disponibles.
-        
-        FORMATO DE RESPUESTA (Obligatorio JSON):
-        Devuelve SOLO un array de objetos JSON con este formato, sin texto adicional ni markdown:
-        [
-          {
-            "scheduleId": 123,
-            "reason": "Coincide con 'martes por la tarde' solicitado por el usuario",
-            "date_human": "Martes 24 de Octubre, 3:00 PM"
-          }
-        ]
-      `;
+      if (!schedules.length) return { message: "No hay horarios de trabajo habilitados próximamente." };
 
-      const userPrompt = `
-        PETICIÓN DEL USUARIO: "${userQuery}"
-        
-        DATOS DISPONIBLES:
-        ${slotsString}
-      `;
+      // --- 3. OBTENER CITAS OCUPADAS (APPOINTMENTS) ---
+      // CORRECCIÓN: Usamos 'startTime' en lugar de 'date'
+      const takenAppointments = await db.Appointment.findAll({
+        where: {
+          professionalId: { [Op.in]: professionalIdsToSearch },
+          status: { [Op.not]: 'cancelada' }, 
+          startTime: { [Op.gte]: new Date() } // <-- CAMBIO AQUÍ
+        }
+      });
 
-      // Reintentos y parseo tolerante de la respuesta
-      const maxAttempts = 3;
-      let lastError = null;
-      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        try {
-          const model = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-          const completion = await this.openai.chat.completions.create({
-            model,
-            messages: [
-              { role: "system", content: systemPrompt },
-              { role: "user", content: userPrompt }
-            ],
-            response_format: { type: "json_object" }
+      // --- 4. GENERAR SLOTS LIBRES ---
+      let freeSlotsList = [];
+      const SLOT_DURATION = 30; // Minutos
+
+      for (const schedule of schedules) {
+        let currentTime = new Date(schedule.startTime);
+        const endTime = new Date(schedule.endTime);
+
+        while (currentTime < endTime) {
+          const slotEnd = new Date(currentTime.getTime() + SLOT_DURATION * 60000);
+          if (slotEnd > endTime) break; 
+
+          // --- COMPARACIÓN DE FECHAS ---
+          const isTaken = takenAppointments.some(app => {
+            try {
+                // CORRECCIÓN: Usamos app.startTime
+                if (!app.startTime) return false;
+
+                const appointmentFullDate = new Date(app.startTime);
+                
+                if (isNaN(appointmentFullDate.getTime())) return false;
+
+                // Comparamos si es el mismo doctor Y la misma hora (margen 1 min)
+                return app.professionalId === schedule.professionalId && 
+                       Math.abs(appointmentFullDate.getTime() - currentTime.getTime()) < 60000; 
+            } catch (err) {
+                return false;
+            }
           });
 
-          const raw = completion?.choices?.[0]?.message?.content;
-          console.log("[OpenAI] Respuesta raw:", raw);
+          if (!isTaken) {
+            const doctorInfo = professionalsMap[schedule.professionalId] || "Doctor";
+            
+            // HORA VENEZUELA
+            const fechaBonita = currentTime.toLocaleDateString('es-ES', { 
+                weekday: 'long', day: 'numeric', month: 'long', 
+                hour: '2-digit', minute:'2-digit', 
+                timeZone: 'America/Caracas' 
+            });
 
-          // Si ya es objeto, usarlo directamente
-          if (raw && typeof raw === 'object') {
-            const parsedObj = raw;
-            if (Array.isArray(parsedObj)) return parsedObj;
-            if (parsedObj.recommendations && Array.isArray(parsedObj.recommendations)) return parsedObj.recommendations;
-            if (parsedObj.data && Array.isArray(parsedObj.data)) return parsedObj.data;
-            const keys = Object.keys(parsedObj);
-            if (keys.length === 1 && Array.isArray(parsedObj[keys[0]])) return parsedObj[keys[0]];
-            return parsedObj;
+            freeSlotsList.push(`- ID_AGENDA: ${schedule.id} | ${doctorInfo} | ${fechaBonita}`);
           }
 
-          // Si es string, intentar extraer JSON
-          if (raw && typeof raw === 'string') {
-            let content = raw.trim();
-            content = content.replace(/```json/g, '').replace(/```/g, '').trim();
-            const jsonMatch = content.match(/(\[.*\]|\{[\s\S]*\})/);
-            const candidate = jsonMatch ? jsonMatch[0] : content;
-            try {
-              const result = JSON.parse(candidate);
-              if (Array.isArray(result)) return result;
-              if (result.recommendations && Array.isArray(result.recommendations)) return result.recommendations;
-              if (result.data && Array.isArray(result.data)) return result.data;
-              const keys = Object.keys(result);
-              if (keys.length === 1 && Array.isArray(result[keys[0]])) return result[keys[0]];
-              return result;
-            } catch (parseErr) {
-              console.warn("[OpenAI] No se pudo parsear JSON, devolviendo texto:", parseErr.message);
-              return { message: content };
-            }
-          }
-
-          // Si no hay contenido válido
-          return { message: "La IA no devolvió contenido legible." };
-        } catch (err) {
-          lastError = err;
-          console.warn(`[OpenAI] intento ${attempt} fallido:`, err.message || err.code || err);
-          await new Promise(r => setTimeout(r, 500 * attempt));
-          continue;
+          currentTime = new Date(currentTime.getTime() + SLOT_DURATION * 60000);
         }
       }
 
-      console.error("[OpenAI] todos los intentos fallaron:", lastError);
-      throw lastError;
+      if (freeSlotsList.length === 0) {
+        return { message: "Todas las citas próximas están ocupadas." };
+      }
+
+      const finalSlotsString = freeSlotsList.slice(0, 15).join('\n');
+
+      // --- 5. PROMPT ---
+      const systemPrompt = `
+        Eres un asistente de la Clínica Dental Plus.
+        
+        INSTRUCCIONES:
+        1. Si el usuario saluda, pregunta la especialidad que desea.
+        2. Filtra por la especialidad y RECOMIENDA SOLO LOS HORARIOS DE LA LISTA .
+        3. USA SIEMPRE LOS NOMBRES Y ESPECIALIDADES QUE VES EN LA LISTA.
+
+        FORMATO RESPUESTA (JSON):
+        {
+          "recommendations": [
+             {"scheduleId": 123, "reason": "Disponible con Dr. X", "date_human": "Lunes 5, 9:30 AM con Dr. X"}
+          ]
+        }
+        O { "message": "..." }
+      `;
+
+      const completion = await this.openai.chat.completions.create({
+        model: "gpt-3.5-turbo",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: `Usuario: "${userQuery}"\n\nHORARIOS LIBRES:\n${finalSlotsString}` }
+        ],
+        response_format: { type: "json_object" }
+      });
+
+      const raw = completion.choices[0].message.content;
+      let parsed;
+      try { parsed = JSON.parse(raw); } catch (e) { return { message: "Error procesando IA." }; }
+
+      if (parsed.recommendations && Array.isArray(parsed.recommendations)) return parsed.recommendations;
+      return parsed; 
 
     } catch (error) {
-      console.error("❌ Error en OpenAIService:", error);
-      throw error;
+      console.error("[IA ERROR]:", error); 
+      if (error.status === 403) return { message: "Error de región (VPN requerido)." };
+      return { message: "Ocurrió un error interno." };
     }
   }
 }
