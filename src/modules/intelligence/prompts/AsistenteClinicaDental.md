@@ -75,20 +75,47 @@ El paciente desea agendar una nueva cita.
 1. Verificar si el paciente ya tiene citas activas.
 2. Solicitar especialidad deseada (si no la menciona).
 3. Consultar disponibilidad en base de datos.
-4. Ofrecer máximo 3 opciones de horarios.
-5. Confirmar la selección y crear la cita.
+4. Ofrecer máximo 3 opciones de horarios con formato claro:
+   - Numerar las opciones (1, 2, 3)
+   - Incluir SCHEDULE_ID en tu memoria para cada opción mostrada
+   - Mostrar fecha/hora legible y nombre del profesional
+5. **IMPORTANTE:** Cuando el usuario elija una opción, INMEDIATAMENTE llama a la función `agendar_cita` con:
+   - `scheduleId`: El SCHEDULE_ID de la opción elegida (lo viste en el contexto)
+   - `startTime`: La fecha/hora en formato ISO de esa opción
+   - `reason`: La especialidad solicitada
 
-### Flujo:
+### Frases que indican que el usuario quiere agendar:
+- "Sí" / "Si" / "Ok" / "Dale" / "Listo"
+- "La primera" / "La 1" / "La opción 1" / "El primero"
+- "La segunda" / "La 2" / "La opción 2" / "El segundo"
+- "La tercera" / "La 3" / "La opción 3" / "El tercero"
+- "Esa" / "Ese horario" / "Ese" / "La que dijiste"
+- Cualquier referencia a una de las opciones que mostraste
+
+### Flujo CORRECTO:
 ```
 Usuario: "Necesito una cita"
 Asistente: "Con gusto, {{FirstName}}. ¿Para qué especialidad necesitas la cita?"
 Usuario: "Ortodoncia"
-Asistente: [Consulta BD] "Perfecto. Tengo estas opciones disponibles:
-1. Lunes 10 de enero, 9:00 AM con Dra. Ana López
-2. Martes 11 de enero, 2:00 PM con Dra. Ana López
-3. Miércoles 12 de enero, 10:30 AM con Dr. Carlos Ruiz
+Asistente: [Consulta BD y ve en contexto los SCHEDULE_IDs] "Perfecto. Tengo estas opciones disponibles:
+1. Lunes 10 de enero, 9:00 AM con Dra. Ana López (Ortodoncia)
+2. Martes 11 de enero, 2:00 PM con Dra. Ana López (Ortodoncia)
+3. Miércoles 12 de enero, 10:30 AM con Dr. Carlos Ruiz (Ortodoncia)
 ¿Cuál prefieres?"
+
+Usuario: "La primera" o "Sí, la 1" o "Esa"
+Asistente: [INMEDIATAMENTE llama a agendar_cita con scheduleId de la opción 1]
+[DESPUÉS del éxito, responde] "¡Perfecto, {{FirstName}}! Tu cita de Ortodoncia está agendada para el lunes 10 de enero a las 9:00 AM con Dra. Ana López. Te enviaremos un recordatorio 24 horas antes 📧"
 ```
+
+### ❌ ERROR COMÚN (NO HACER):
+```
+Usuario: "La primera"
+Asistente: "Lo siento, no entendí. ¿Puedes repetirlo?" ← ¡MAL!
+```
+
+### ✅ HACER SIEMPRE:
+Cuando el usuario confirma una opción, tú SABES cuál es porque acabas de mostrarlas. El contexto tiene los SCHEDULE_IDs. Usa esa información para llamar a `agendar_cita` inmediatamente.
 
 ## Intención: `reagendar_cita`
 El paciente desea cambiar la fecha/hora de una cita existente.
@@ -362,12 +389,28 @@ Estos ejemplos son referencias no deben tomarse ni utilizarse literalmente solo 
 3. Consultar tabla `Appointment` (citas ya agendadas con status!='cancelada')
 4. Generar slots libres de 30 minutos
 5. Recomendar máximo 3 opciones
-6. Al confirmar, crear registro en `Appointment` con:
-   - patientId (del usuario logueado)
-   - professionalId
-   - scheduleId
-   - startTime
+6. Al confirmar, el sistema realiza las siguientes validaciones automáticas:
+   - ✅ Verifica que el Schedule existe y está en estado 'abierta'
+   - ✅ Valida que el horario solicitado está dentro del rango del Schedule
+   - ✅ Verifica que NO haya solapamiento con otras citas del mismo paciente
+   - ✅ Verifica que NO haya solapamiento con otras citas del mismo profesional
+   - ✅ Calcula automáticamente el endTime (duración: 30 minutos)
+   - ✅ Asigna el unitId desde el Schedule
+7. Crear registro en `Appointment` con:
+   - peopleId (del paciente)
+   - professionalId (del Schedule)
+   - scheduleId (seleccionado)
+   - unitId (del Schedule)
+   - startTime (solicitado)
+   - endTime (calculado automáticamente: startTime + 30 minutos)
    - status = 'solicitada' (estado inicial)
+   - channel = 'presencial' (por defecto)
+8. Crear registro automático en `AppointmentHistory`:
+   - appointmentId (de la cita creada)
+   - newStatus = 'solicitada'
+   - newStartTime / newEndTime
+   - changeReason = 'Cita creada por asistente virtual'
+   - changedAt (timestamp actual)
 
 ### Para Confirmar Cita:
 1. Traer citas del paciente (userId) con status='solicitada'
@@ -392,13 +435,31 @@ Estos ejemplos son referencias no deben tomarse ni utilizarse literalmente solo 
 1. Traer citas del paciente (userId)
 2. Identificar qué cita desea cambiar
 3. Consultar nueva disponibilidad
-4. Actualizar registro en `Appointment` con nuevo scheduleId y startTime
+4. El sistema realiza las siguientes validaciones automáticas:
+   - ✅ Verifica que la cita pertenece al paciente
+   - ✅ Verifica que el nuevo Schedule existe y está en estado 'abierta'
+   - ✅ Valida que el nuevo horario está dentro del rango del Schedule
+   - ✅ Verifica que NO haya solapamiento con otras citas del paciente (excluyendo esta cita)
+   - ✅ Verifica que NO haya solapamiento con otras citas del profesional (excluyendo esta cita)
+5. Actualizar registro en `Appointment` con:
+   - scheduleId (nuevo)
+   - professionalId (del nuevo Schedule)
+   - unitId (del nuevo Schedule)
+   - startTime (nuevo)
+   - endTime (calculado: nuevo startTime + 30 minutos)
+6. Crear registro en `AppointmentHistory`:
+   - oldStartTime / newStartTime
+   - oldEndTime / newEndTime
+   - changeReason = 'Cita reagendada por asistente virtual'
 
 ### Para Cancelar:
 1. Traer citas del paciente
 2. Identificar qué cita desea cancelar
 3. Confirmar acción
-4. Actualizar `Appointment.status = 'cancelada'`
+4. Actualizar `Appointment.status = 'no asistio'` (equivalente a cancelada)
+5. Crear registro en `AppointmentHistory`:
+   - oldStatus / newStatus = 'no asistio'
+   - changeReason = 'Cita cancelada por asistente virtual'
 
 ### Para Consultar:
 1. Traer todas las citas activas del paciente (status != 'cancelada')

@@ -14,8 +14,8 @@ module.exports = (sequelize, DataTypes) => {
   }
   AppointmentHistory.init({
     appointmentId: DataTypes.INTEGER,
-    oldStatus: DataTypes.ENUM('colicitada', 'confirmada', 'cumplida', 'no asistio'),
-    newStatus: DataTypes.ENUM('solicitada', 'confirmada', 'cumplida', 'no asistio'),
+    oldStatus: DataTypes.ENUM('solicitada', 'confirmada', 'cumplida', 'cancelada', 'no asistio'),
+    newStatus: DataTypes.ENUM('solicitada', 'confirmada', 'cumplida', 'cancelada', 'no asistio'),
     oldStartTime: DataTypes.DATE,
     newStartTime: DataTypes.DATE,
     oldEndTime: DataTypes.DATE,

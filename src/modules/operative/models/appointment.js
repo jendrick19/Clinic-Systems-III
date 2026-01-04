@@ -37,7 +37,7 @@ module.exports = (sequelize, DataTypes) => {
     endTime: DataTypes.DATE,
     reason: DataTypes.STRING,
     channel: DataTypes.ENUM('presencial', 'virtual'),
-    status: DataTypes.ENUM('solicitada', 'confirmada', 'cumplida', 'no asistio'),
+    status: DataTypes.ENUM('solicitada', 'confirmada', 'cumplida', 'cancelada', 'no asistio'),
     observations: DataTypes.STRING
   }, {
     sequelize,

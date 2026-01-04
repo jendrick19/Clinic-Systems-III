@@ -49,7 +49,7 @@ class ConversationalAssistantService {
         this.conversationMemory.set(conversationKey, []);
       }
       const conversationHistory = this.conversationMemory.get(conversationKey);
-      const convoState = this.conversationState.get(conversationKey) || {};
+      let convoState = this.conversationState.get(conversationKey) || {};
 
       // ELIMINADO: Ya no interceptamos patrones específicos.
       // Dejamos que el modelo de IA procese TODOS los mensajes usando el contexto precargado.
@@ -82,8 +82,22 @@ class ConversationalAssistantService {
         availabilityContext = await this._getAvailabilityContext(userMessage);
       }
 
-      // 4. Construir el contexto completo (con reglas anti-contradicción)
-      const contextualInfo = this._buildContextualInfo(userContext, availabilityContext, fullAvailability);
+      // 4. Guardar las opciones disponibles en el estado de la conversación
+      if (availabilityContext && availabilityContext.freeSlots && availabilityContext.freeSlots.length > 0) {
+        convoState.lastShownOptions = availabilityContext.freeSlots.map((slot, idx) => ({
+          optionNumber: idx + 1,
+          scheduleId: slot.scheduleId,
+          startTime: slot.startTime.toISOString(),
+          dateHuman: slot.dateHuman,
+          professional: slot.professionalName,
+          specialty: availabilityContext.specialty
+        }));
+        this.conversationState.set(conversationKey, convoState);
+        console.log('[ChatIA] Opciones guardadas en estado:', convoState.lastShownOptions);
+      }
+
+      // 5. Construir el contexto completo (con reglas anti-contradicción)
+      const contextualInfo = this._buildContextualInfo(userContext, availabilityContext, fullAvailability, convoState.lastShownOptions);
       
       // LOG DETALLADO DEL CONTEXTO
       console.log('==========================================');
@@ -113,6 +127,14 @@ REGLAS ESTRICTAS (MUY IMPORTANTE):
   y ofrece alternativas (otra fecha/otro doctor/otra especialidad).
 - Recomienda MÁXIMO 3 horarios y SOLO los que aparecen listados en HORARIOS_DISPONIBLES.
 - El CONTEXTO ACTUAL ya contiene TODA la información del paciente. NO necesitas hacer consultas adicionales.
+
+🔴 REGLA CRÍTICA - AGENDAR CITAS:
+Cuando el paciente confirma que quiere una de las opciones que mostraste (diciendo "sí", "la primera", "esa", "ok", "la 2", etc.),
+debes INMEDIATAMENTE llamar a la función agendar_cita usando:
+  - scheduleId: el SCHEDULE_ID de la opción elegida (está en el contexto que acabas de ver)
+  - startTime: el START_TIME_ISO de esa opción (está en el contexto)
+  - reason: la especialidad o motivo
+NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirmó. EJECUTA la función agendar_cita.
 `;
 
       const messages = [
@@ -156,6 +178,13 @@ REGLAS ESTRICTAS (MUY IMPORTANTE):
 
         console.log(`[ChatIA] Resultado de función:`, JSON.stringify(actionResult, null, 2));
 
+        // Si se agendó una cita exitosamente, limpiar las opciones guardadas
+        if (assistantMessage.function_call.name === 'agendar_cita' && actionResult && actionResult.success) {
+          convoState.lastShownOptions = null;
+          this.conversationState.set(conversationKey, convoState);
+          console.log('[ChatIA] Opciones limpiadas del estado después de agendar exitosamente');
+        }
+
         // Si la función fue exitosa, generar una respuesta contextualizada
         if (actionResult && actionResult.success) {
           // Agregar el resultado de la función al contexto
@@ -169,11 +198,14 @@ REGLAS ESTRICTAS (MUY IMPORTANTE):
             }
           );
 
+          // Reconstruir contexto actualizado después de la acción
+          const updatedContext = this._buildContextualInfo(userContext, availabilityContext, fullAvailability, convoState.lastShownOptions);
+          
           // Hacer una segunda llamada a OpenAI para generar respuesta apropiada
           const followUpMessages = [
             {
               role: "system",
-              content: `${this.systemPrompt}\n\n${strictAvailabilityRules}\n\nCONTEXTO ACTUAL (DATOS REALES):\n${contextualInfo}`
+              content: `${this.systemPrompt}\n\n${strictAvailabilityRules}\n\nCONTEXTO ACTUAL (DATOS REALES):\n${updatedContext}`
             },
             ...conversationHistory
           ];
@@ -443,8 +475,9 @@ REGLAS ESTRICTAS (MUY IMPORTANTE):
    * @param {Object} userContext - Contexto del usuario { patient, appointments }
    * @param {Object} availabilityContext - Contexto de disponibilidad { specialty, freeSlots }
    * @param {Object} fullAvailability - Disponibilidad completa precargada (opcional)
+   * @param {Array} lastShownOptions - Últimas opciones mostradas al paciente (opcional)
    */
-  _buildContextualInfo(userContext, availabilityContext, fullAvailability = null) {
+  _buildContextualInfo(userContext, availabilityContext, fullAvailability = null, lastShownOptions = null) {
     let info = "";
 
     // Información del paciente
@@ -487,14 +520,36 @@ REGLAS ESTRICTAS (MUY IMPORTANTE):
     if (availabilityContext && availabilityContext.freeSlots) {
       info += `ESPECIALIDAD_DETECTADA: ${availabilityContext.specialty}\n`;
       info += `HORARIOS_DISPONIBLES_COUNT: ${availabilityContext.freeSlots.length}\n`;
-      info += `HORARIOS_DISPONIBLES:\n`;
+      info += `HORARIOS_DISPONIBLES (OPCIONES PARA MOSTRAR AL PACIENTE):\n`;
       availabilityContext.freeSlots.forEach((slot, idx) => {
-        info += `- HORARIO_${idx + 1}: SCHEDULE_ID=${slot.scheduleId} | ${slot.dateHuman} | ${slot.professionalName}\n`;
+        const startTimeISO = slot.startTime.toISOString();
+        info += `- OPCION_${idx + 1}:\n`;
+        info += `  SCHEDULE_ID: ${slot.scheduleId}\n`;
+        info += `  START_TIME_ISO: ${startTimeISO}\n`;
+        info += `  FECHA_LEGIBLE: ${slot.dateHuman}\n`;
+        info += `  PROFESIONAL: ${slot.professionalName}\n`;
       });
       info += "\n";
+      info += "⚠️ IMPORTANTE: Cuando el paciente elija una opción (diciendo '1', 'la primera', 'sí', 'esa', etc.),\n";
+      info += "debes llamar INMEDIATAMENTE a agendar_cita usando el SCHEDULE_ID y START_TIME_ISO de esa opción.\n\n";
     } else {
       // Si no detectamos especialidad, no forzamos un "0" (para evitar que el modelo diga "no hay" sin que se haya pedido algo).
       info += "HORARIOS_DISPONIBLES_COUNT: -1\n";
+    }
+
+    // Incluir opciones mostradas previamente (si existen)
+    if (lastShownOptions && lastShownOptions.length > 0) {
+      info += "\n=== OPCIONES QUE MOSTRASTE RECIENTEMENTE AL PACIENTE ===\n";
+      info += "⚠️ El paciente puede referirse a estas opciones. Si dice 'sí', 'la primera', 'esa', etc., se refiere a una de estas:\n\n";
+      lastShownOptions.forEach(opt => {
+        info += `OPCION_${opt.optionNumber}:\n`;
+        info += `  SCHEDULE_ID: ${opt.scheduleId}\n`;
+        info += `  START_TIME_ISO: ${opt.startTime}\n`;
+        info += `  FECHA_LEGIBLE: ${opt.dateHuman}\n`;
+        info += `  PROFESIONAL: ${opt.professional}\n`;
+        info += `  ESPECIALIDAD: ${opt.specialty}\n`;
+      });
+      info += "\n🔴 Si el usuario confirma alguna opción, llama a agendar_cita con el SCHEDULE_ID y START_TIME_ISO correspondiente.\n\n";
     }
 
     // Incluir resumen de disponibilidad completa (si está disponible)
@@ -507,13 +562,17 @@ REGLAS ESTRICTAS (MUY IMPORTANTE):
         if (slots && Array.isArray(slots) && slots.length > 0) {
           info += `${specialty.toUpperCase()}: ${slots.length} horarios disponibles\n`;
           slots.slice(0, 3).forEach((slot, idx) => {
-            info += `  ${idx + 1}. ${slot.date_human} - ${slot.professional}\n`;
+            info += `  OPCION_${idx + 1}:\n`;
+            info += `    SCHEDULE_ID: ${slot.scheduleId}\n`;
+            info += `    START_TIME_ISO: ${slot.date_iso}\n`;
+            info += `    FECHA_LEGIBLE: ${slot.date_human}\n`;
+            info += `    PROFESIONAL: ${slot.professional}\n`;
           });
         } else {
           info += `${specialty.toUpperCase()}: Sin horarios disponibles\n`;
         }
       });
-      info += "\n";
+      info += "\n⚠️ Cuando el paciente elija una opción, usa el SCHEDULE_ID y START_TIME_ISO correspondiente para llamar a agendar_cita.\n\n";
     }
 
     return info;
@@ -526,21 +585,21 @@ REGLAS ESTRICTAS (MUY IMPORTANTE):
     return [
       {
         name: "agendar_cita",
-        description: "Agenda una nueva cita dental para el paciente",
+        description: "Agenda una nueva cita dental para el paciente. ÚSALA cuando el paciente confirme que desea agendar uno de los horarios disponibles que le mostraste. Frases como 'sí', 'la primera', 'esa', 'la opción 2', 'el segundo horario', etc., indican que quiere agendar. Debes extraer el scheduleId y startTime del horario que eligió de las opciones que le mostraste previamente.",
         parameters: {
           type: "object",
           properties: {
             scheduleId: {
               type: "number",
-              description: "ID del horario de trabajo (Schedule) seleccionado"
+              description: "ID del horario de trabajo (Schedule) seleccionado por el paciente de las opciones mostradas"
             },
             startTime: {
               type: "string",
-              description: "Fecha y hora de inicio en formato ISO 8601"
+              description: "Fecha y hora de inicio en formato ISO 8601 del horario seleccionado"
             },
             reason: {
               type: "string",
-              description: "Motivo o descripción de la cita"
+              description: "Motivo o especialidad de la cita (ej: 'Ortodoncia', 'Limpieza dental')"
             }
           },
           required: ["scheduleId", "startTime"]
@@ -673,40 +732,152 @@ REGLAS ESTRICTAS (MUY IMPORTANTE):
   }
 
   /**
-   * Agenda una nueva cita
+   * Agenda una nueva cita con validaciones completas
    */
   async _agendarCita(patientId, args) {
     const { scheduleId, startTime, reason } = args;
 
-    // Obtener información del Schedule
-    const schedule = await db.Schedule.findByPk(scheduleId);
-    if (!schedule) {
-      return { success: false, message: "Horario no encontrado" };
-    }
+    console.log('========== INICIO _agendarCita ==========');
+    console.log('[_agendarCita] patientId:', patientId);
+    console.log('[_agendarCita] args:', JSON.stringify(args, null, 2));
 
-    // Verificar que no esté ocupado
-    const existing = await db.Appointment.findOne({
-      where: {
-        scheduleId: scheduleId,
-        startTime: new Date(startTime),
-        status: { [Op.ne]: 'no asistio' }
+    try {
+      // 1. Obtener información del Schedule con includes necesarios
+      const schedule = await db.Schedule.findByPk(scheduleId, {
+        include: [
+          {
+            model: db.Professional,
+            as: 'professional',
+            attributes: ['id', 'names', 'surNames', 'specialty']
+          }
+        ]
+      });
+
+      if (!schedule) {
+        console.error('[_agendarCita] Schedule no encontrado:', scheduleId);
+        return { success: false, message: "Horario no encontrado" };
       }
-    });
 
-    if (existing) {
-      return { success: false, message: "Este horario ya está ocupado" };
-    }
+      console.log('[_agendarCita] Schedule encontrado:', {
+        id: schedule.id,
+        professionalId: schedule.professionalId,
+        unitId: schedule.unitId,
+        status: schedule.status,
+        startTime: schedule.startTime,
+        endTime: schedule.endTime
+      });
 
-    // Crear la cita
-    const appointment = await db.Appointment.create({
-      peopleId: patientId,
-      professionalId: schedule.professionalId,
-      scheduleId: scheduleId,
-      startTime: new Date(startTime),
-      status: 'solicitada',
-      reason: reason || 'Consulta dental'
-    });
+      // 2. Verificar que el Schedule esté en estado 'abierta'
+      if (schedule.status !== 'abierta') {
+        return { 
+          success: false, 
+          message: `El horario no está disponible (estado: ${schedule.status})` 
+        };
+      }
 
+      const requestedStartTime = new Date(startTime);
+      const SLOT_DURATION = 30; // minutos
+      const requestedEndTime = new Date(requestedStartTime.getTime() + SLOT_DURATION * 60000);
+
+      // 3. Verificar que el horario solicitado está dentro del rango del Schedule
+      const scheduleStart = new Date(schedule.startTime);
+      const scheduleEnd = new Date(schedule.endTime);
+
+      if (requestedStartTime < scheduleStart || requestedEndTime > scheduleEnd) {
+        return {
+          success: false,
+          message: `El horario solicitado (${requestedStartTime.toLocaleString('es-ES')}) está fuera del rango de la agenda (${scheduleStart.toLocaleString('es-ES')} - ${scheduleEnd.toLocaleString('es-ES')})`
+        };
+      }
+
+      // 4. Verificar que no haya solapamiento con citas del mismo paciente
+      const patientOverlap = await this._checkPatientAppointmentOverlap(
+        patientId,
+        requestedStartTime,
+        requestedEndTime
+      );
+
+      if (patientOverlap) {
+        return {
+          success: false,
+          message: `Ya tienes una cita programada en este horario: ${patientOverlap.startTime.toLocaleString('es-ES')} con ${patientOverlap.professionalName}`,
+          conflictingAppointment: {
+            id: patientOverlap.id,
+            startTime: patientOverlap.startTime,
+            professional: patientOverlap.professionalName
+          }
+        };
+      }
+
+      // 5. Verificar que no haya solapamiento con citas de otros usuarios en el mismo profesional
+      const professionalOverlap = await this._checkProfessionalAppointmentOverlap(
+        schedule.professionalId,
+        requestedStartTime,
+        requestedEndTime
+      );
+
+      if (professionalOverlap) {
+        return {
+          success: false,
+          message: `Este horario con ${schedule.professional.names} ${schedule.professional.surNames} ya está ocupado por otra cita`,
+          suggestedAction: "Elige otro horario disponible"
+        };
+      }
+
+      // 6. Validar que el Schedule tenga unitId
+      if (!schedule.unitId) {
+        console.error('[_agendarCita] El Schedule no tiene unitId asignado:', scheduleId);
+        // Intentar obtener un unitId por defecto
+        const defaultUnit = await db.CareUnit.findOne({
+          where: { status: true },
+          order: [['id', 'ASC']]
+        });
+        
+        if (!defaultUnit) {
+          return {
+            success: false,
+            message: "Error de configuración: No hay unidades de atención disponibles. Contacta al administrador."
+          };
+        }
+        
+        schedule.unitId = defaultUnit.id;
+        console.log('[_agendarCita] Usando unitId por defecto:', defaultUnit.id);
+      }
+
+      // 7. Crear la cita con todos los datos necesarios
+      const appointmentData = {
+        peopleId: patientId,
+        professionalId: schedule.professionalId,
+        scheduleId: scheduleId,
+        unitId: schedule.unitId,
+        startTime: requestedStartTime,
+        endTime: requestedEndTime,
+        status: 'solicitada',
+        reason: reason || 'Consulta dental',
+        channel: 'presencial'
+      };
+
+      console.log('[_agendarCita] Creando Appointment con datos:', JSON.stringify(appointmentData, null, 2));
+
+      const appointment = await db.Appointment.create(appointmentData);
+
+      // 8. Crear registro en el historial
+      await db.AppointmentHistory.create({
+        appointmentId: appointment.id,
+        oldStatus: null,
+        newStatus: 'solicitada',
+        oldStartTime: null,
+        newStartTime: requestedStartTime,
+        oldEndTime: null,
+        newEndTime: requestedEndTime,
+        changeReason: 'Cita creada por asistente virtual',
+        changedAt: new Date()
+      });
+
+      console.log(`[_agendarCita] ✅ Cita ID=${appointment.id} creada exitosamente para paciente ${patientId}`);
+      console.log('========== FIN _agendarCita (ÉXITO) ==========');
+
+      // 9. Retornar información completa de la cita creada
     return {
       success: true,
       message: "Cita agendada exitosamente",
@@ -714,10 +885,144 @@ REGLAS ESTRICTAS (MUY IMPORTANTE):
       appointment: {
         id: appointment.id,
         startTime: appointment.startTime,
+          endTime: appointment.endTime,
         status: appointment.status,
-        reason: appointment.reason
+          reason: appointment.reason,
+          professional: schedule.professional ? 
+            `${schedule.professional.names} ${schedule.professional.surNames}` : null,
+          specialty: schedule.professional?.specialty || null,
+          dateHuman: requestedStartTime.toLocaleString('es-ES', {
+            weekday: 'long',
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            timeZone: 'America/Caracas'
+          })
+        }
+      };
+
+    } catch (error) {
+      console.error('[_agendarCita ERROR]:', error);
+      console.error('[_agendarCita ERROR Stack]:', error.stack);
+      
+      // Si es un error de validación de Sequelize, extraer detalles
+      if (error.name === 'SequelizeValidationError' || error.name === 'SequelizeDatabaseError') {
+        console.error('[_agendarCita ERROR Details]:', JSON.stringify(error.errors || error, null, 2));
       }
+      
+      return {
+        success: false,
+        message: "Error al crear la cita. Por favor intenta nuevamente.",
+        error: error.message,
+        errorDetails: error.errors || error.original || null
+      };
+    }
+  }
+
+  /**
+   * Verifica si el paciente tiene citas que se solapan con el horario solicitado
+   * @param {number} patientId - ID del paciente
+   * @param {Date} startTime - Hora de inicio de la nueva cita
+   * @param {Date} endTime - Hora de fin de la nueva cita
+   * @param {number} excludeAppointmentId - ID de cita a excluir (opcional, útil al reagendar)
+   * @returns {Object|null} Información de la cita solapada o null si no hay conflicto
+   */
+  async _checkPatientAppointmentOverlap(patientId, startTime, endTime, excludeAppointmentId = null) {
+    const whereClause = {
+      peopleId: patientId,
+      status: { [Op.notIn]: ['no asistio', 'cancelada'] },
+      [Op.or]: [
+        // La nueva cita comienza durante una cita existente
+        {
+          startTime: { [Op.lte]: startTime },
+          endTime: { [Op.gt]: startTime }
+        },
+        // La nueva cita termina durante una cita existente
+        {
+          startTime: { [Op.lt]: endTime },
+          endTime: { [Op.gte]: endTime }
+        },
+        // La nueva cita envuelve completamente una cita existente
+        {
+          startTime: { [Op.gte]: startTime },
+          endTime: { [Op.lte]: endTime }
+        }
+      ]
     };
+
+    // Si se proporciona un ID de cita a excluir, agregarlo al where
+    if (excludeAppointmentId) {
+      whereClause.id = { [Op.ne]: excludeAppointmentId };
+    }
+
+    const appointments = await db.Appointment.findAll({
+      where: whereClause,
+      include: [
+        {
+          model: db.Professional,
+          as: 'professional',
+          attributes: ['names', 'surNames']
+        }
+      ]
+    });
+
+    if (appointments.length > 0) {
+      const apt = appointments[0];
+      return {
+        id: apt.id,
+        startTime: apt.startTime,
+        endTime: apt.endTime,
+        professionalName: apt.professional ? 
+          `${apt.professional.names} ${apt.professional.surNames}` : 'Doctor'
+      };
+    }
+
+    return null;
+  }
+
+  /**
+   * Verifica si el profesional tiene citas que se solapan con el horario solicitado
+   * @param {number} professionalId - ID del profesional
+   * @param {Date} startTime - Hora de inicio de la nueva cita
+   * @param {Date} endTime - Hora de fin de la nueva cita
+   * @param {number} excludeAppointmentId - ID de cita a excluir (opcional, útil al reagendar)
+   * @returns {Object|null} Información de la cita solapada o null si no hay conflicto
+   */
+  async _checkProfessionalAppointmentOverlap(professionalId, startTime, endTime, excludeAppointmentId = null) {
+    const whereClause = {
+      professionalId: professionalId,
+      status: { [Op.notIn]: ['no asistio', 'cancelada'] },
+      [Op.or]: [
+        // La nueva cita comienza durante una cita existente
+        {
+          startTime: { [Op.lte]: startTime },
+          endTime: { [Op.gt]: startTime }
+        },
+        // La nueva cita termina durante una cita existente
+        {
+          startTime: { [Op.lt]: endTime },
+          endTime: { [Op.gte]: endTime }
+        },
+        // La nueva cita envuelve completamente una cita existente
+        {
+          startTime: { [Op.gte]: startTime },
+          endTime: { [Op.lte]: endTime }
+        }
+      ]
+    };
+
+    // Si se proporciona un ID de cita a excluir, agregarlo al where
+    if (excludeAppointmentId) {
+      whereClause.id = { [Op.ne]: excludeAppointmentId };
+    }
+
+    const appointments = await db.Appointment.findAll({
+      where: whereClause
+    });
+
+    return appointments.length > 0 ? appointments[0] : null;
   }
 
   /**
@@ -726,6 +1031,7 @@ REGLAS ESTRICTAS (MUY IMPORTANTE):
   async _confirmarCita(patientId, args) {
     const { appointmentId } = args;
 
+    try {
     console.log(`[_confirmarCita] Intentando confirmar cita ID=${appointmentId} para patientId=${patientId}`);
 
     // Verificar que la cita existe y pertenece al paciente
@@ -764,6 +1070,19 @@ REGLAS ESTRICTAS (MUY IMPORTANTE):
     appointment.status = 'confirmada';
     await appointment.save();
 
+      // Crear registro en el historial
+      await db.AppointmentHistory.create({
+        appointmentId: appointment.id,
+        oldStatus: previousStatus,
+        newStatus: 'confirmada',
+        oldStartTime: appointment.startTime,
+        newStartTime: appointment.startTime,
+        oldEndTime: appointment.endTime,
+        newEndTime: appointment.endTime,
+        changeReason: 'Cita confirmada por asistente virtual',
+        changedAt: new Date()
+      });
+
     console.log(`[_confirmarCita] ✅ Cita ID=${appointmentId} confirmada exitosamente. Estado anterior: ${previousStatus} → nuevo: confirmada`);
 
     return {
@@ -789,70 +1108,251 @@ REGLAS ESTRICTAS (MUY IMPORTANTE):
         })
       }
     };
+
+    } catch (error) {
+      console.error('[_confirmarCita ERROR]:', error);
+      return {
+        success: false,
+        message: "Error al confirmar la cita. Por favor intenta nuevamente.",
+        error: error.message
+      };
+    }
   }
 
   /**
-   * Reagenda una cita existente
+   * Reagenda una cita existente con validaciones completas
    */
   async _reagendarCita(patientId, args) {
     const { appointmentId, newScheduleId, newStartTime } = args;
 
-    // Verificar que la cita pertenece al paciente
+    try {
+      // 1. Verificar que la cita pertenece al paciente
     const appointment = await db.Appointment.findOne({
       where: {
         id: appointmentId,
         peopleId: patientId
-      }
+        },
+        include: [
+          {
+            model: db.Professional,
+            as: 'professional',
+            attributes: ['names', 'surNames', 'specialty']
+          }
+        ]
     });
 
     if (!appointment) {
       return { success: false, message: "Cita no encontrada o no pertenece al paciente" };
     }
 
-    // Obtener nuevo schedule
-    const newSchedule = await db.Schedule.findByPk(newScheduleId);
+      // 2. Guardar valores antiguos para el historial
+      const oldStartTime = appointment.startTime;
+      const oldEndTime = appointment.endTime;
+      const oldProfessionalId = appointment.professionalId;
+      const oldScheduleId = appointment.scheduleId;
+
+      // 3. Obtener nuevo schedule
+      const newSchedule = await db.Schedule.findByPk(newScheduleId, {
+        include: [
+          {
+            model: db.Professional,
+            as: 'professional',
+            attributes: ['names', 'surNames', 'specialty']
+          }
+        ]
+      });
+
     if (!newSchedule) {
       return { success: false, message: "Nuevo horario no encontrado" };
     }
 
-    // Actualizar la cita
-    appointment.scheduleId = newScheduleId;
-    appointment.professionalId = newSchedule.professionalId;
-    appointment.startTime = new Date(newStartTime);
-    await appointment.save();
+      // 4. Verificar que el Schedule esté abierto
+      if (newSchedule.status !== 'abierta') {
+        return { 
+          success: false, 
+          message: `El nuevo horario no está disponible (estado: ${newSchedule.status})` 
+        };
+      }
+
+      const requestedStartTime = new Date(newStartTime);
+      const SLOT_DURATION = 30; // minutos
+      const requestedEndTime = new Date(requestedStartTime.getTime() + SLOT_DURATION * 60000);
+
+      // 5. Verificar que el horario solicitado está dentro del rango del Schedule
+      const scheduleStart = new Date(newSchedule.startTime);
+      const scheduleEnd = new Date(newSchedule.endTime);
+
+      if (requestedStartTime < scheduleStart || requestedEndTime > scheduleEnd) {
+        return {
+          success: false,
+          message: `El nuevo horario está fuera del rango de la agenda disponible`
+        };
+      }
+
+      // 6. Verificar solapamientos con otras citas del paciente (excluyendo esta cita)
+      const patientOverlap = await this._checkPatientAppointmentOverlap(
+        patientId,
+        requestedStartTime,
+        requestedEndTime,
+        appointmentId // Excluir esta cita de la verificación
+      );
+
+      if (patientOverlap) {
+        return {
+          success: false,
+          message: `Ya tienes una cita en este horario: ${patientOverlap.startTime.toLocaleString('es-ES')} con ${patientOverlap.professionalName}`
+        };
+      }
+
+      // 7. Verificar solapamientos con otras citas del profesional
+      const professionalOverlap = await this._checkProfessionalAppointmentOverlap(
+        newSchedule.professionalId,
+        requestedStartTime,
+        requestedEndTime,
+        appointmentId // Excluir esta cita de la verificación
+      );
+
+      if (professionalOverlap) {
+        return {
+          success: false,
+          message: `Este horario con ${newSchedule.professional.names} ${newSchedule.professional.surNames} ya está ocupado`
+        };
+      }
+
+      // 8. Validar que el nuevo Schedule tenga unitId
+      let finalUnitId = newSchedule.unitId;
+      if (!finalUnitId) {
+        console.warn('[_reagendarCita] El Schedule no tiene unitId asignado, buscando por defecto');
+        const defaultUnit = await db.CareUnit.findOne({
+          where: { status: true },
+          order: [['id', 'ASC']]
+        });
+        
+        if (!defaultUnit) {
+          return {
+            success: false,
+            message: "Error de configuración: No hay unidades de atención disponibles."
+          };
+        }
+        
+        finalUnitId = defaultUnit.id;
+        console.log('[_reagendarCita] Usando unitId por defecto:', finalUnitId);
+      }
+
+      // 9. Actualizar la cita
+      appointment.scheduleId = newScheduleId;
+      appointment.professionalId = newSchedule.professionalId;
+      appointment.unitId = finalUnitId;
+      appointment.startTime = requestedStartTime;
+      appointment.endTime = requestedEndTime;
+      await appointment.save();
+
+      // 10. Crear registro en el historial
+      await db.AppointmentHistory.create({
+        appointmentId: appointment.id,
+        oldStatus: appointment.status,
+        newStatus: appointment.status,
+        oldStartTime: oldStartTime,
+        newStartTime: requestedStartTime,
+        oldEndTime: oldEndTime,
+        newEndTime: requestedEndTime,
+        changeReason: 'Cita reagendada por asistente virtual',
+        changedAt: new Date()
+      });
+
+      console.log(`[_reagendarCita] ✅ Cita ID=${appointment.id} reagendada exitosamente`);
 
     return {
       success: true,
       message: "Cita reagendada exitosamente",
-      appointmentId: appointment.id
-    };
+        appointmentId: appointment.id,
+        appointment: {
+          id: appointment.id,
+          oldDateTime: oldStartTime.toLocaleString('es-ES'),
+          newDateTime: requestedStartTime.toLocaleString('es-ES'),
+          professional: newSchedule.professional ? 
+            `${newSchedule.professional.names} ${newSchedule.professional.surNames}` : null,
+          specialty: newSchedule.professional?.specialty || null
+        }
+      };
+
+    } catch (error) {
+      console.error('[_reagendarCita ERROR]:', error);
+      return {
+        success: false,
+        message: "Error al reagendar la cita. Por favor intenta nuevamente.",
+        error: error.message
+      };
+    }
   }
 
   /**
-   * Cancela una cita
+   * Cancela una cita con registro en historial
    */
   async _cancelarCita(patientId, args) {
     const { appointmentId } = args;
 
+    try {
     const appointment = await db.Appointment.findOne({
       where: {
         id: appointmentId,
         peopleId: patientId
-      }
+        },
+        include: [
+          {
+            model: db.Professional,
+            as: 'professional',
+            attributes: ['names', 'surNames', 'specialty']
+          }
+        ]
     });
 
     if (!appointment) {
       return { success: false, message: "Cita no encontrada o no pertenece al paciente" };
     }
 
+      // Guardar estado anterior para el historial
+      const oldStatus = appointment.status;
+
+      // Actualizar estado a 'no asistio' (cancelada)
     appointment.status = 'no asistio';
     await appointment.save();
+
+      // Crear registro en el historial
+      await db.AppointmentHistory.create({
+        appointmentId: appointment.id,
+        oldStatus: oldStatus,
+        newStatus: 'no asistio',
+        oldStartTime: appointment.startTime,
+        newStartTime: appointment.startTime,
+        oldEndTime: appointment.endTime,
+        newEndTime: appointment.endTime,
+        changeReason: 'Cita cancelada por asistente virtual',
+        changedAt: new Date()
+      });
+
+      console.log(`[_cancelarCita] ✅ Cita ID=${appointment.id} cancelada exitosamente`);
 
     return {
       success: true,
       message: "Cita cancelada exitosamente",
-      appointmentId: appointment.id
-    };
+        appointmentId: appointment.id,
+        appointment: {
+          id: appointment.id,
+          dateTime: appointment.startTime.toLocaleString('es-ES'),
+          professional: appointment.professional ? 
+            `${appointment.professional.names} ${appointment.professional.surNames}` : null
+        }
+      };
+
+    } catch (error) {
+      console.error('[_cancelarCita ERROR]:', error);
+      return {
+        success: false,
+        message: "Error al cancelar la cita. Por favor intenta nuevamente.",
+        error: error.message
+      };
+    }
   }
 
   /**
