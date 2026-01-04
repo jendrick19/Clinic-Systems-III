@@ -115,16 +115,17 @@
               <label class="block text-sm font-medium text-slate-700 mb-2">Especialidad *</label>
               <select v-model="formData.specialty" class="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cyan-500 outline-none" required>
                 <option value="">Selecciona una especialidad</option>
-                <option value="Odontología General">Odontología General</option>
-                <option value="Ortodoncia">Ortodoncia</option>
-                <option value="Endodoncia">Endodoncia</option>
-                <option value="Periodoncia">Periodoncia</option>
-                <option value="Odontopediatría">Odontopediatría</option>
-                <option value="Cirugía Oral y Maxilofacial">Cirugía Oral y Maxilofacial</option>
-                <option value="Prótesis Dental">Prótesis Dental</option>
-                <option value="Implantología">Implantología</option>
-                <option value="Estética Dental">Estética Dental</option>
-                <option value="Patología Oral">Patología Oral</option>
+                <!-- Guardamos el value en minúsculas para consistencia con BD -->
+                <option value="odontología general">Odontología General</option>
+                <option value="ortodoncia">Ortodoncia</option>
+                <option value="endodoncia">Endodoncia</option>
+                <option value="periodoncia">Periodoncia</option>
+                <option value="odontopediatría">Odontopediatría</option>
+                <option value="cirugía oral y maxilofacial">Cirugía Oral y Maxilofacial</option>
+                <option value="prótesis dental">Prótesis Dental</option>
+                <option value="implantología">Implantología</option>
+                <option value="estética dental">Estética Dental</option>
+                <option value="patología oral">Patología Oral</option>
               </select>
             </div>
           </div>
@@ -299,12 +300,16 @@ const handleRegister = async () => {
       }
     } else {
       url = '/api/operative/profesionales'
+      // Normalizar especialidad en minúsculas ANTES de enviar
+      const normalizedSpecialty = (formData.value.specialty || '').toString().trim().toLowerCase()
+      formData.value.specialty = normalizedSpecialty
+
       // Preparar payload Profesional
       payload = {
         nombres: formData.value.names,
         apellidos: formData.value.surNames,
         registroProfesional: formData.value.professionalRegister.toUpperCase(),
-        especialidad: formData.value.specialty,
+        especialidad: normalizedSpecialty,
         correo: formData.value.email,
         telefono: formData.value.phone || undefined,
         // Estructura especial para el Controller de Profesionales

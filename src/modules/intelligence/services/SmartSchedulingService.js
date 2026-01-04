@@ -1,3 +1,15 @@
+/**
+ * SERVICIO LEGACY - Recomendación Simple con Google Gemini
+ * 
+ * Este servicio proporciona recomendaciones simples de horarios disponibles
+ * usando Google Gemini AI, sin mantener contexto conversacional.
+ * 
+ * Para un asistente conversacional completo con contexto de usuario,
+ * ver: ConversationalAssistantService.js
+ * 
+ * Endpoint: POST /api/intelligence/recommend (con provider='gemini')
+ */
+
 const { GoogleGenerativeAI } = require("@google/generative-ai");
 const { Op } = require("sequelize");
 const db = require("../../../../database/models");

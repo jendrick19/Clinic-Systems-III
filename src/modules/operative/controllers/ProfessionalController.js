@@ -31,7 +31,7 @@ const mapRequestToCreate = (body) => {
     names: body.nombres,
     surNames: body.apellidos,
     professionalRegister: body.registroProfesional, // Importante: Este campo se usará como Username
-    specialty: body.especialidad,
+    specialty: body.especialidad ? body.especialidad.toString().trim().toLowerCase() : body.especialidad,
     email: body.correo,
   };
 
@@ -64,7 +64,7 @@ const mapRequestToUpdate = (body) => {
   if (body.nombres !== undefined) payload.names = body.nombres;
   if (body.apellidos !== undefined) payload.surNames = body.apellidos;
   if (body.registroProfesional !== undefined) payload.professionalRegister = body.registroProfesional;
-  if (body.especialidad !== undefined) payload.specialty = body.especialidad;
+  if (body.especialidad !== undefined) payload.specialty = body.especialidad ? body.especialidad.toString().trim().toLowerCase() : body.especialidad;
   if (body.correo !== undefined) payload.email = body.correo;
   if (body.telefono !== undefined) payload.phone = body.telefono;
   

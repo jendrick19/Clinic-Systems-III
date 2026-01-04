@@ -31,17 +31,19 @@ const validateAllowedFields = (allowedFields) => {
   };
 };
 
+// Guardamos y validamos especialidades en minúsculas para consistencia con BD.
+// Se sanitiza el input a minúsculas antes de validar.
 const ALLOWED_SPECIALTIES = [
-  'Odontología General',
-  'Ortodoncia',
-  'Endodoncia',
-  'Periodoncia',
-  'Odontopediatría',
-  'Cirugía Oral y Maxilofacial',
-  'Prótesis Dental',
-  'Implantología',
-  'Estética Dental',
-  'Patología Oral'
+  'odontología general',
+  'ortodoncia',
+  'endodoncia',
+  'periodoncia',
+  'odontopediatría',
+  'cirugía oral y maxilofacial',
+  'prótesis dental',
+  'implantología',
+  'estética dental',
+  'patología oral',
 ];
 
 const checkProfessionalRegisterUniqueness = async (value, { req }) => {
@@ -106,6 +108,7 @@ const validateCreate = [
 
   body('especialidad')
     .notEmpty().withMessage('La especialidad es requerida')
+    .customSanitizer(v => (v ?? '').toString().trim().toLowerCase())
     .isIn(ALLOWED_SPECIALTIES).withMessage(`La especialidad debe ser una de las siguientes: ${ALLOWED_SPECIALTIES.join(', ')}`),
   validateEmail('correo').custom(checkEmailUniqueness),
   validatePhone('telefono'),
@@ -144,6 +147,7 @@ const validateUpdate = [
     .custom(checkProfessionalRegisterUniqueness),
   body('especialidad')
     .optional()
+    .customSanitizer(v => (v ?? '').toString().trim().toLowerCase())
     .isIn(ALLOWED_SPECIALTIES).withMessage(`La especialidad debe ser una de las siguientes: ${ALLOWED_SPECIALTIES.join(', ')}`),
   validateEmailOptional('correo').custom(checkEmailUniqueness),
   validatePhone('telefono'),

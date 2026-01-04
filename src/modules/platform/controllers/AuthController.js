@@ -1,4 +1,5 @@
 const { loginByIdentifier } = require('../services/AuthService');
+const { initializeIAContext } = require('../../intelligence/services/IAContextService');
 
 /**
  * Handler para login por professionalRegister (odontólogos) o documentType + documentId (pacientes)
@@ -30,6 +31,11 @@ const loginHandler = async (req, res, next) => {
       // Llamamos al servicio con la contraseña
       const result = await loginByIdentifier(null, professionalRegister, password);
       
+      // Inicializar contexto IA para el profesional (en background)
+      initializeIAContext(result.data.userId, result.data.id).catch(err => {
+        console.error('[Login] Error inicializando contexto IA para profesional:', err);
+      });
+      
       return res.json({
         codigo: 200,
         mensaje: 'Login exitoso',
@@ -50,6 +56,11 @@ const loginHandler = async (req, res, next) => {
 
       // Llamamos al servicio con la contraseña
       const result = await loginByIdentifier(tipoDocumento, numeroDocumento, password);
+      
+      // Inicializar contexto IA para el paciente (en background)
+      initializeIAContext(result.data.userId, result.data.id).catch(err => {
+        console.error('[Login] Error inicializando contexto IA para paciente:', err);
+      });
       
       return res.json({
         codigo: 200,

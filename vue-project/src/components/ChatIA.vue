@@ -16,11 +16,114 @@ const chatContainer = ref(null)
 const professionalId = ref(1) 
 const provider = ref('openai') // 'gemini' o 'openai'
 
+// Función para extraer userId/patientId desde localStorage o sessionStorage
+const getUserFromStorage = () => {
+  try {
+    const possibleKeys = ['user', 'userData', 'session', 'auth', 'currentUser', 'authUser']
+    const storages = [
+      { name: 'localStorage', storage: localStorage },
+      { name: 'sessionStorage', storage: sessionStorage }
+    ]
+    
+    for (const { name, storage } of storages) {
+      // Buscar en claves específicas
+      for (const key of possibleKeys) {
+        const dataStr = storage.getItem(key)
+        if (dataStr) {
+          try {
+            const userData = JSON.parse(dataStr)
+            // CORRECCIÓN: Priorizar userData.id (peopleId) sobre userData.data.userId
+            // Estructura: { id: 62, data: { id: 62, userId: 2, ... } }
+            // Queremos el 62, NO el 2
+            const extractedId = userData?.id || userData?.data?.id || null
+            if (extractedId) {
+              console.log(`[ChatIA] peopleId extraído de ${name}.${key}:`, extractedId, '(estructura completa:', userData, ')')
+              return Number(extractedId)
+            }
+          } catch (e) {
+            // No es JSON válido, continuar
+          }
+        }
+      }
+      // Fallback: leer userId simple
+      const simpleUserId = storage.getItem('userId')
+      if (simpleUserId) {
+        console.log(`[ChatIA] userId simple desde ${name}:`, simpleUserId)
+        return Number(simpleUserId)
+      }
+    }
+  } catch (e) {
+    console.error('[ChatIA] Error leyendo userId del storage:', e)
+  }
+  return null
+}
+
+const userId = ref(getUserFromStorage() || (window.__USER_ID__ ? Number(window.__USER_ID__) : null))
+const patientId = ref(getUserFromStorage() || (window.__PATIENT_ID__ ? Number(window.__PATIENT_ID__) : null))
+const sessionContext = ref(null)
+
 const scrollToBottom = async () => {
   await nextTick()
   if (chatContainer.value) {
     chatContainer.value.scrollTop = chatContainer.value.scrollHeight
   }
+}
+
+// Funciones para respuestas variadas y humanas
+const getRandomResponse = (options) => {
+  return options[Math.floor(Math.random() * options.length)]
+}
+
+const getNoResultsMessage = () => {
+  const messages = [
+    'Hmm, no encontré horarios que se ajusten a lo que buscas para este mes. ¿Quieres que busque en otro período?',
+    'Lo siento, no hay horarios disponibles que coincidan con tu solicitud en enero de 2026. ¿Te gustaría probar con otras fechas?',
+    'Parece que no tengo horarios libres para esas fechas específicas. ¿Qué te parece si exploramos otras opciones?',
+    'No logré encontrar espacios disponibles con esos criterios. ¿Prefieres que busque en fechas alternativas?',
+    'Vaya, todos los horarios de enero están ocupados para lo que necesitas. ¿Puedo ayudarte a buscar en otro mes?'
+  ]
+  return getRandomResponse(messages)
+}
+
+const getIntroMessage = (count) => {
+  const intros = [
+    `¡Perfecto! Encontré ${count} ${count === 1 ? 'opción' : 'opciones'} que podrían interesarte:\n\n`,
+    `Genial, tengo ${count} ${count === 1 ? 'horario disponible' : 'horarios disponibles'} para ti:\n\n`,
+    `¡Excelente! He encontrado ${count} ${count === 1 ? 'alternativa' : 'alternativas'} que se ajustan a lo que buscas:\n\n`,
+    `Mira lo que encontré: ${count} ${count === 1 ? 'opción perfecta' : 'opciones perfectas'} para ti:\n\n`,
+    `¡Buenas noticias! Tengo ${count} ${count === 1 ? 'horario' : 'horarios'} que podrían funcionarte:\n\n`
+  ]
+  return getRandomResponse(intros)
+}
+
+const getErrorMessage = (errorText) => {
+  const messages = [
+    `Ups, algo salió mal: ${errorText}. ¿Podrías intentarlo de nuevo?`,
+    `Vaya, tuve un pequeño problema: ${errorText}. ¿Probamos otra vez?`,
+    `Lo siento, encontré un error: ${errorText}. Intentémoslo nuevamente.`,
+    `Parece que hubo un inconveniente: ${errorText}. ¿Quieres volver a intentarlo?`
+  ]
+  return getRandomResponse(messages)
+}
+
+const getConnectionErrorMessage = () => {
+  const messages = [
+    'No pude conectarme con el servidor. ¿Está el backend funcionando? (npm run dev)',
+    'Parece que hay un problema de conexión. Asegúrate de que el backend esté activo (npm run dev).',
+    'Hmm, no puedo alcanzar el servidor. Verifica que el backend esté corriendo (npm run dev).',
+    'Error de conexión. ¿El backend está encendido? Intenta ejecutar npm run dev.'
+  ]
+  return getRandomResponse(messages)
+}
+
+const getUnexpectedResponseMessage = () => {
+  const messages = [
+    'Recibí una respuesta un poco confusa. ¿Podrías reformular tu pregunta?',
+    'No estoy seguro de cómo interpretar eso. ¿Puedes intentar preguntarlo de otra manera?',
+    'La respuesta que obtuve no tiene mucho sentido. ¿Intentamos de nuevo?',
+    'Algo extraño pasó con mi respuesta. ¿Me lo preguntas otra vez?'
+  ]
+  return getRandomResponse(messages)
 }
 
 const sendMessage = async () => {
@@ -33,58 +136,158 @@ const sendMessage = async () => {
   
   await scrollToBottom()
 
+  // Si no hay userId ni patientId, no llamamos al backend de chat.
+  // Preguntamos al usuario cómo prefiere identificarse para poder consultar sus citas.
+  if (!userId.value && !patientId.value) {
+    const consultPatterns = [
+      /mis citas/i,
+      /\bconsultar (mis )?citas\b/i,
+      /\bver mis citas\b/i,
+      /\btengo citas\b/i,
+      /\bcuáles son mis citas\b/i,
+      /\bmostrar mis citas\b/i
+    ]
+    if (consultPatterns.some(p => p.test(userText))) {
+      const askId = 'Para mostrar tus citas necesito que inicies sesión o me facilites el tipo y número de documento (ej: "DNI 12345678") o tu nombre completo. ¿Cómo prefieres continuar?'
+      messages.value.push({ role: 'assistant', content: askId })
+      isLoading.value = false
+      await scrollToBottom()
+      return
+    }
+  }
+  // Detectar si el usuario está enviando su userId para guardarlo (ej: "mi id es 123")
+  const idMatch = userText.match(/(?:mi id es|mi user id es|mi usuario es|user id|userid|soy usuario|soy)[:\\s]*?(\\d{1,10})/i)
+  if (idMatch) {
+    userId.value = Number(idMatch[1])
+    try {
+      localStorage.setItem('userId', String(userId.value))
+      messages.value.push({ role: 'assistant', content: `Perfecto, he guardado tu userId (${userId.value}) en esta sesión.` })
+    } catch (err) {
+      messages.value.push({ role: 'assistant', content: `He recibido tu id (${userId.value}) pero no pude guardarlo localmente.` })
+    }
+    isLoading.value = false
+    await scrollToBottom()
+    return
+  }
+
   try {
-    const response = await fetch('/api/intelligence/recommend', {
+    const response = await fetch('/api/intelligence/chat', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        query: userText,
-        professionalId: professionalId.value,
-        provider: provider.value
+        message: userText,
+        userId: userId.value,
+        patientId: patientId.value
       })
     })
 
     const result = await response.json()
 
-    if (result.success) {
-      if (Array.isArray(result.data)) {
-        if (result.data.length === 0) {
-          messages.value.push({ 
-            role: 'assistant', 
-            content: 'Lo siento, no encontré horarios disponibles que coincidan con tu solicitud para el mes de enero de 2026.' 
-          })
-        } else {
-          let reply = 'He encontrado estas opciones para ti en enero:\n\n'
-          result.data.forEach((slot, index) => {
-            reply += `${index + 1}. **${slot.date_human}**\n   *Motivo: ${slot.reason}*\n\n`
-          })
-          messages.value.push({ role: 'assistant', content: reply })
-        }
-      } else if (result.data && result.data.message) {
-        messages.value.push({ role: 'assistant', content: result.data.message })
-      } else {
-        // Caso de respuesta inesperada
-        messages.value.push({ role: 'assistant', content: 'La IA respondió algo inesperado. Por favor, intenta de nuevo.' })
-      }
+    if (result.success && result.data) {
+      const assistantPayload = result.data;
+      const assistantMessage = assistantPayload.message || 'Lo siento, no entendí. ¿Puedes repetirlo?';
+      messages.value.push({ role: 'assistant', content: assistantMessage })
     } else {
-      messages.value.push({ 
-        role: 'assistant', 
-        content: 'Hubo un error en la IA: ' + (result.message || 'Error desconocido') 
-      })
+      messages.value.push({ role: 'assistant', content: getErrorMessage(result.message || 'Error desconocido') })
     }
   } catch (error) {
     console.error('Error:', error)
     messages.value.push({ 
       role: 'assistant', 
-      content: 'Error de conexión. Asegúrate de que el backend esté corriendo (npm run dev).' 
+      content: getConnectionErrorMessage()
     })
   } finally {
     isLoading.value = false
     await scrollToBottom()
   }
 }
+
+// Función para configurar manualmente el userId
+const setManualUserId = () => {
+  const inputId = window.prompt('Ingresa tu ID de usuario (PeopleAttended):')
+  if (inputId && !isNaN(inputId)) {
+    const numId = Number(inputId)
+    userId.value = numId
+    patientId.value = numId
+    localStorage.setItem('userId', String(numId))
+    localStorage.setItem('patientId', String(numId))
+    messages.value.push({
+      role: 'assistant',
+      content: `Perfecto, he guardado tu sesión con ID ${numId}. Ahora puedes consultarme sobre tus citas.`
+    })
+    scrollToBottom()
+    
+    // Intentar inicializar sesión
+    fetch('/api/intelligence/init-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: numId })
+    })
+      .then(r => r.json())
+      .then(json => {
+        if (json.success && json.data) {
+          sessionContext.value = json.data
+          console.log('[ChatIA] Sesión inicializada:', json.data)
+        }
+      })
+      .catch(err => console.error('Error inicializando sesión:', err))
+  }
+}
+
+onMounted(async () => {
+  // Verificar nuevamente el userId al montar (por si se actualizó localStorage después de cargar)
+  const freshUserId = getUserFromStorage()
+  if (freshUserId && !userId.value) {
+    userId.value = freshUserId
+    patientId.value = freshUserId
+    console.log('[ChatIA onMounted] userId actualizado:', freshUserId)
+  }
+  
+  console.log('[ChatIA onMounted] userId:', userId.value, 'patientId:', patientId.value)
+  
+  // Intentar inicializar sesión y precargar contexto
+  if (userId.value || patientId.value) {
+    try {
+      const resp = await fetch('/api/intelligence/init-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: userId.value, patientId: patientId.value })
+      })
+      const json = await resp.json()
+      if (json.success && json.data) {
+        sessionContext.value = json.data
+        console.log('==========================================')
+        console.log('[ChatIA Frontend] SESIÓN INICIALIZADA')
+        console.log('[ChatIA Frontend] Patient:', json.data.patient)
+        console.log('[ChatIA Frontend] Appointments:', json.data.appointments?.length || 0, 'citas')
+        console.log('[ChatIA Frontend] Citas detalle:', json.data.appointments)
+        console.log('[ChatIA Frontend] Availability:', Object.keys(json.data.availability || {}))
+        console.log('==========================================')
+      } else {
+        console.error('[ChatIA Frontend] Error en init-session:', json)
+      }
+    } catch (err) {
+      console.error('init-session error', err)
+    }
+  }
+  // Si hay userId obtenido desde window.__USER_ID__, guardarlo en localStorage para futuras sesiones
+  if (window.__USER_ID__ && !localStorage.getItem('userId')) {
+    try {
+      localStorage.setItem('userId', String(window.__USER_ID__))
+      userId.value = Number(window.__USER_ID__)
+    } catch (err) {
+      console.error('No se pudo guardar userId en localStorage', err)
+    }
+  }
+  if (window.__PATIENT_ID__ && !localStorage.getItem('patientId')) {
+    try {
+      localStorage.setItem('patientId', String(window.__PATIENT_ID__))
+      patientId.value = Number(window.__PATIENT_ID__)
+    } catch (err) {
+      console.error('No se pudo guardar patientId en localStorage', err)
+    }
+  }
+})
 </script>
 
 <template>
@@ -95,7 +298,11 @@ const sendMessage = async () => {
         <div class="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
           <span class="text-lg">🤖</span>
         </div>
-        <h3 class="font-bold text-base">Asistente Dental IA</h3>
+        <div>
+          <h3 class="font-bold text-base">Asistente Dental IA</h3>
+          <p v-if="userId" class="text-xs text-white/80">Usuario: {{ userId }}</p>
+          <button v-else @click="setManualUserId" class="text-xs text-white/80 hover:text-white underline">Configurar sesión</button>
+        </div>
       </div>
       <select v-model="provider" class="bg-white/20 text-xs p-1.5 rounded-xl border-none text-white outline-none hover:bg-white/30 transition-colors cursor-pointer">
         <option value="gemini" class="text-slate-900">Google Gemini</option>

@@ -7,17 +7,19 @@ const db = require('../../../../database/models');
 
 const { Appointment } = db.modules.operative;
 
+// Nota: La validación estricta está comentada más abajo.
+// Mantenemos esta lista en minúsculas para consistencia con cómo se guarda en BD.
 const ALLOWED_SPECIALTIES = [
-  'Odontología General',
-  'Ortodoncia',
-  'Endodoncia',
-  'Periodoncia',
-  'Odontopediatría',
-  'Cirugía Oral y Maxilofacial',
-  'Prótesis Dental',
-  'Implantología',
-  'Estética Dental',
-  'Patología Oral'
+  'odontología general',
+  'ortodoncia',
+  'endodoncia',
+  'periodoncia',
+  'odontopediatría',
+  'cirugía oral y maxilofacial',
+  'prótesis dental',
+  'implantología',
+  'estética dental',
+  'patología oral',
 ];
 
 const SORT_FIELDS = {
