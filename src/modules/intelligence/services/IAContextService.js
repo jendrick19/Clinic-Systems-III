@@ -24,7 +24,7 @@ async function initializeIAContext(userId, patientId) {
     // 1. Obtener información del paciente
     const PeopleAttended = db.modules.operative.PeopleAttended;
     let patient = null;
-    
+
     if (patientId) {
       patient = await PeopleAttended.findByPk(patientId);
     } else if (userId) {
@@ -43,7 +43,7 @@ async function initializeIAContext(userId, patientId) {
       appointments = await db.Appointment.findAll({
         where: {
           peopleId: patient.id,
-          status: { [Op.ne]: 'no asistio' } // Excluir solo las que no asistieron
+          status: { [Op.notIn]: ['no asistio', 'cancelada'] } // Excluir solo las que no asistieron
         },
         include: [
           {
@@ -54,7 +54,7 @@ async function initializeIAContext(userId, patientId) {
         ],
         order: [['startTime', 'ASC']]
       });
-      
+
       console.log(`[IAContextService] Citas encontradas para peopleId ${patient.id}:`, appointments.length);
       appointments.forEach(apt => {
         console.log(`  - ID ${apt.id}: ${apt.startTime} | Status: ${apt.status} | Prof: ${apt.professional?.names}`);
@@ -69,11 +69,11 @@ async function initializeIAContext(userId, patientId) {
     const appointmentsData = appointments.map(apt => ({
       id: apt.id,
       date_iso: apt.startTime,
-      date_human: new Date(apt.startTime).toLocaleString('es-ES', { 
-        day: '2-digit', 
-        month: '2-digit', 
-        year: 'numeric', 
-        hour: '2-digit', 
+      date_human: new Date(apt.startTime).toLocaleString('es-ES', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
         minute: '2-digit',
         timeZone: 'America/Caracas'
       }),
@@ -193,11 +193,11 @@ async function getAvailabilityBySpecialty() {
             professionalId: schedule.professionalId,
             professional: prof ? `${prof.names} ${prof.surNames}` : null,
             date_iso: schedule.startTime,
-            date_human: new Date(schedule.startTime).toLocaleString('es-ES', { 
-              day: '2-digit', 
-              month: '2-digit', 
-              year: 'numeric', 
-              hour: '2-digit', 
+            date_human: new Date(schedule.startTime).toLocaleString('es-ES', {
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric',
+              hour: '2-digit',
               minute: '2-digit',
               timeZone: 'America/Caracas'
             })

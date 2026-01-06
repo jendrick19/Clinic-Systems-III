@@ -231,7 +231,7 @@ class IAController {
         appointments = await db.Appointment.findAll({
           where: {
             peopleId: patient.id,
-            status: { [Op.ne]: 'no asistio' } // Excluir solo las que no asistieron
+            status: { [Op.ne]: 'cancelada' } // Excluir solo las que no asistieron
           },
           include: [
             {

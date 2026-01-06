@@ -456,7 +456,7 @@ Estos ejemplos son referencias no deben tomarse ni utilizarse literalmente solo 
 1. Traer citas del paciente
 2. Identificar qué cita desea cancelar
 3. Confirmar acción
-4. Actualizar `Appointment.status = 'no asistio'` (equivalente a cancelada)
+4. Actualizar `Appointment.status = 'cancelada'` (equivalente a cancelada)
 5. Crear registro en `AppointmentHistory`:
    - oldStatus / newStatus = 'no asistio'
    - changeReason = 'Cita cancelada por asistente virtual'
