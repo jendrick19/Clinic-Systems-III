@@ -386,6 +386,7 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
       const professionalIds = professionals.map(p => p.id);
 
       // Buscar horarios disponibles
+      console.log(`[getAvailability] Buscando schedules para profesionales: ${professionalIds.join(', ')}`);
       const schedules = await db.Schedule.findAll({
         where: {
           professionalId: { [Op.in]: professionalIds },
@@ -394,6 +395,11 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
         },
         order: [['startTime', 'ASC']],
         limit: 15
+      });
+
+      console.log(`[getAvailability] Schedules encontrados: ${schedules.length}`);
+      schedules.forEach((s, idx) => {
+        console.log(`  Schedule ${idx + 1}: ID=${s.id}, Start=${s.startTime}, End=${s.endTime}, Prof=${s.professionalId}`);
       });
 
       // Obtener citas ya agendadas
@@ -405,12 +411,18 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
         }
       });
 
+      console.log(`[getAvailability] Citas ocupadas encontradas: ${takenAppointments.length}`);
+      takenAppointments.forEach((app, idx) => {
+        console.log(`  Cita ${idx + 1}: ID=${app.id}, Start=${app.startTime}, Prof=${app.professionalId}, Status=${app.status}`);
+      });
+
       // Generar slots libres
       const freeSlots = this._generateFreeSlots(schedules, takenAppointments, professionals);
 
       return {
         specialty: mentionedSpecialty,
-        freeSlots: freeSlots.slice(0, 3) // Máximo 3 opciones
+        freeSlots: freeSlots.slice(0, 15) // Enviar hasta 15 slots para que el agente vea el rango completo de disponibilidad
+        // El agente decidirá cuáles 3 mostrar al paciente
       };
     } catch (error) {
       console.error("Error obteniendo disponibilidad:", error);
@@ -431,9 +443,25 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
       profMap[p.id] = `Dr. ${p.names} ${p.surNames} (${p.specialty})`;
     });
 
+    console.log('[_generateFreeSlots] Generando slots libres...');
+    console.log(`[_generateFreeSlots] Total schedules recibidos: ${schedules.length}`);
+    console.log(`[_generateFreeSlots] Total citas ocupadas: ${takenAppointments.length}`);
+
     for (const schedule of schedules) {
       let currentTime = new Date(schedule.startTime);
       const endTime = new Date(schedule.endTime);
+
+      console.log(`\n[_generateFreeSlots] Procesando Schedule ID: ${schedule.id}`);
+      console.log(`  - Professional ID: ${schedule.professionalId}`);
+      console.log(`  - Start Time: ${currentTime.toISOString()} (${currentTime.toLocaleString('es-ES', { timeZone: 'America/Caracas' })})`);
+      console.log(`  - End Time: ${endTime.toISOString()} (${endTime.toLocaleString('es-ES', { timeZone: 'America/Caracas' })})`);
+      
+      const diffHours = (endTime - currentTime) / (1000 * 60 * 60);
+      console.log(`  - Duración total: ${diffHours.toFixed(2)} horas`);
+      console.log(`  - Slots posibles: ${Math.floor(diffHours * 2)}`);
+
+      let slotsGeneratedForSchedule = 0;
+      let slotsBlockedForSchedule = 0;
 
       while (currentTime < endTime) {
         const slotEnd = new Date(currentTime.getTime() + SLOT_DURATION * 60000);
@@ -443,7 +471,8 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
         const isTaken = takenAppointments.some(app => {
           if (!app.startTime || app.professionalId !== schedule.professionalId) return false;
           const appointmentTime = new Date(app.startTime);
-          return Math.abs(appointmentTime.getTime() - currentTime.getTime()) < 60000;
+          const timeDiff = Math.abs(appointmentTime.getTime() - currentTime.getTime());
+          return timeDiff < 60000;
         });
 
         if (!isTaken) {
@@ -461,12 +490,19 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
               timeZone: 'America/Caracas'
             })
           });
+          slotsGeneratedForSchedule++;
+        } else {
+          slotsBlockedForSchedule++;
         }
 
         currentTime = new Date(currentTime.getTime() + SLOT_DURATION * 60000);
       }
+
+      console.log(`  - Slots libres generados: ${slotsGeneratedForSchedule}`);
+      console.log(`  - Slots bloqueados: ${slotsBlockedForSchedule}`);
     }
 
+    console.log(`\n[_generateFreeSlots] ✅ Total slots libres generados: ${freeSlots.length}`);
     return freeSlots;
   }
 
@@ -521,16 +557,49 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
       info += `ESPECIALIDAD_DETECTADA: ${availabilityContext.specialty}\n`;
       info += `HORARIOS_DISPONIBLES_COUNT: ${availabilityContext.freeSlots.length}\n`;
       info += `HORARIOS_DISPONIBLES (OPCIONES PARA MOSTRAR AL PACIENTE):\n`;
-      availabilityContext.freeSlots.forEach((slot, idx) => {
-        const startTimeISO = slot.startTime.toISOString();
-        info += `- OPCION_${idx + 1}:\n`;
-        info += `  SCHEDULE_ID: ${slot.scheduleId}\n`;
-        info += `  START_TIME_ISO: ${startTimeISO}\n`;
-        info += `  FECHA_LEGIBLE: ${slot.dateHuman}\n`;
-        info += `  PROFESIONAL: ${slot.professionalName}\n`;
+      
+      // Agrupar slots por scheduleId para mostrar el rango completo
+      const slotsBySchedule = {};
+      availabilityContext.freeSlots.forEach(slot => {
+        if (!slotsBySchedule[slot.scheduleId]) {
+          slotsBySchedule[slot.scheduleId] = {
+            scheduleId: slot.scheduleId,
+            professionalName: slot.professionalName,
+            slots: []
+          };
+        }
+        slotsBySchedule[slot.scheduleId].slots.push(slot);
       });
+      
+      let optionNumber = 0;
+      Object.values(slotsBySchedule).forEach(scheduleGroup => {
+        // Mostrar información de la agenda completa
+        if (scheduleGroup.slots.length > 0) {
+          const firstSlot = scheduleGroup.slots[0];
+          const lastSlot = scheduleGroup.slots[scheduleGroup.slots.length - 1];
+          
+          info += `\n📅 AGENDA_ID: ${scheduleGroup.scheduleId} - ${scheduleGroup.professionalName}\n`;
+          info += `   (Esta agenda tiene ${scheduleGroup.slots.length} slots libres de 30 minutos)\n\n`;
+        }
+        
+        // Mostrar cada slot individual
+        scheduleGroup.slots.forEach(slot => {
+          optionNumber++;
+          const startTimeISO = slot.startTime.toISOString();
+          info += `- OPCION_${optionNumber}:\n`;
+          info += `  SCHEDULE_ID: ${slot.scheduleId}\n`;
+          info += `  START_TIME_ISO: ${startTimeISO}\n`;
+          info += `  FECHA_LEGIBLE: ${slot.dateHuman}\n`;
+          info += `  PROFESIONAL: ${slot.professionalName}\n`;
+        });
+      });
+      
       info += "\n";
-      info += "⚠️ IMPORTANTE: Cuando el paciente elija una opción (diciendo '1', 'la primera', 'sí', 'esa', etc.),\n";
+      info += "⚠️ IMPORTANTE: Presenta los horarios al paciente mencionando primero el rango general de la agenda,\n";
+      info += "luego muestra máximo 3 slots específicos disponibles. Ejemplo:\n";
+      info += "\"El Dr. X tiene disponibilidad el [fecha] desde las [hora inicio] hasta las [hora fin].\n";
+      info += "Estos horarios están libres: 1) 9:00 AM, 2) 11:00 AM, 3) 2:00 PM\"\n\n";
+      info += "⚠️ Cuando el paciente elija una opción (diciendo '1', 'la primera', 'sí', 'esa', etc.),\n";
       info += "debes llamar INMEDIATAMENTE a agendar_cita usando el SCHEDULE_ID y START_TIME_ISO de esa opción.\n\n";
     } else {
       // Si no detectamos especialidad, no forzamos un "0" (para evitar que el modelo diga "no hay" sin que se haya pedido algo).
@@ -564,7 +633,9 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
           slots.slice(0, 3).forEach((slot, idx) => {
             info += `  OPCION_${idx + 1}:\n`;
             info += `    SCHEDULE_ID: ${slot.scheduleId}\n`;
-            info += `    START_TIME_ISO: ${slot.date_iso}\n`;
+            info += `    START_TIME_ISO: ${slot.startTime_iso || slot.date_iso}\n`;
+            info += `    END_TIME_ISO: ${slot.endTime_iso}\n`;
+            info += `    HORARIO_COMPLETO: ${slot.startTime_human || slot.date_human} hasta ${slot.endTime_human}\n`;
             info += `    FECHA_LEGIBLE: ${slot.date_human}\n`;
             info += `    PROFESIONAL: ${slot.professional}\n`;
           });

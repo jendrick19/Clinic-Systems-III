@@ -164,6 +164,12 @@ async function getAvailabilityBySpecialty() {
         limit: 10
       });
 
+      console.log(`[IAContextService] Schedules encontrados para ${specialty}: ${schedules.length}`);
+      schedules.forEach((s, idx) => {
+        const duration = (new Date(s.endTime) - new Date(s.startTime)) / (1000 * 60 * 60);
+        console.log(`  Schedule ${idx + 1}: ID=${s.id}, Start=${s.startTime}, End=${s.endTime}, Duración=${duration.toFixed(2)}h, Prof=${s.professionalId}`);
+      });
+
       // Buscar citas ya agendadas para estos profesionales
       const takenAppointments = await db.Appointment.findAll({
         where: {
@@ -173,36 +179,75 @@ async function getAvailabilityBySpecialty() {
         }
       });
 
-      // Generar slots libres
+      console.log(`[IAContextService] Citas ocupadas encontradas para ${specialty}: ${takenAppointments.length}`);
+
+      // Generar slots libres de 30 minutos
       const slots = [];
+      const SLOT_DURATION = 30; // minutos
+
       for (const schedule of schedules) {
-        if (slots.length >= 3) break; // Máximo 3 slots por especialidad
+        let currentTime = new Date(schedule.startTime);
+        const endTime = new Date(schedule.endTime);
+        const prof = professionals.find(p => p.id === schedule.professionalId);
 
-        // Verificar si el horario está ocupado
-        const isTaken = takenAppointments.some(app => {
-          if (!app.startTime || app.professionalId !== schedule.professionalId) return false;
-          const appointmentTime = new Date(app.startTime);
-          const scheduleTime = new Date(schedule.startTime);
-          return Math.abs(appointmentTime.getTime() - scheduleTime.getTime()) < 60000; // Dentro de 1 minuto
-        });
+        console.log(`[IAContextService] Generando slots para Schedule ID ${schedule.id}:`);
+        console.log(`  - Rango: ${currentTime.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Caracas' })} hasta ${endTime.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Caracas' })}`);
 
-        if (!isTaken) {
-          const prof = professionals.find(p => p.id === schedule.professionalId);
-          slots.push({
-            scheduleId: schedule.id,
-            professionalId: schedule.professionalId,
-            professional: prof ? `${prof.names} ${prof.surNames}` : null,
-            date_iso: schedule.startTime,
-            date_human: new Date(schedule.startTime).toLocaleString('es-ES', {
-              day: '2-digit',
-              month: '2-digit',
-              year: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit',
-              timeZone: 'America/Caracas'
-            })
+        let slotsGenerated = 0;
+        
+        // Generar slots de 30 minutos dentro del rango del schedule
+        while (currentTime < endTime) {
+          const slotEnd = new Date(currentTime.getTime() + SLOT_DURATION * 60000);
+          if (slotEnd > endTime) break;
+
+          // Verificar si este slot específico está ocupado
+          const isTaken = takenAppointments.some(app => {
+            if (!app.startTime || app.professionalId !== schedule.professionalId) return false;
+            const appointmentTime = new Date(app.startTime);
+            return Math.abs(appointmentTime.getTime() - currentTime.getTime()) < 60000; // Dentro de 1 minuto
           });
+
+          if (!isTaken) {
+            slots.push({
+              scheduleId: schedule.id,
+              professionalId: schedule.professionalId,
+              professional: prof ? `${prof.names} ${prof.surNames}` : null,
+              startTime_iso: new Date(currentTime),
+              endTime_iso: schedule.endTime,
+              date_iso: new Date(currentTime),
+              startTime_human: currentTime.toLocaleString('es-ES', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                timeZone: 'America/Caracas'
+              }),
+              endTime_human: endTime.toLocaleString('es-ES', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                timeZone: 'America/Caracas'
+              }),
+              date_human: currentTime.toLocaleString('es-ES', {
+                day: '2-digit',
+                month: '2-digit',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                timeZone: 'America/Caracas'
+              })
+            });
+            slotsGenerated++;
+          }
+
+          // Avanzar 30 minutos
+          currentTime = new Date(currentTime.getTime() + SLOT_DURATION * 60000);
         }
+
+        console.log(`  - Slots libres generados: ${slotsGenerated}`);
       }
 
       availability[specialty] = slots;
