@@ -6,30 +6,32 @@ const {
   softDeleteAppointment,
 } = require('../services/AppointmentService');
 
+const { initializeIAContext } = require('../../intelligence/services/IAContextService');
+
 const mapModelToResponse = (appointment) => {
   if (!appointment) return null;
   return {
     id: appointment.id,
     paciente: appointment.peopleAttended
       ? {
-          id: appointment.peopleAttended.id,
-          nombres: appointment.peopleAttended.names,
-          apellidos: appointment.peopleAttended.surNames,
-        }
+        id: appointment.peopleAttended.id,
+        nombres: appointment.peopleAttended.names,
+        apellidos: appointment.peopleAttended.surNames,
+      }
       : undefined,
     profesional: appointment.professional
       ? {
-          id: appointment.professional.id,
-          nombres: appointment.professional.names,
-          apellidos: appointment.professional.surNames,
-        }
+        id: appointment.professional.id,
+        nombres: appointment.professional.names,
+        apellidos: appointment.professional.surNames,
+      }
       : undefined,
     agendaId: appointment.scheduleId,
     unidad: appointment.careUnit
       ? {
-          id: appointment.careUnit.id,
-          nombre: appointment.careUnit.name,
-        }
+        id: appointment.careUnit.id,
+        nombre: appointment.careUnit.name,
+      }
       : undefined,
     inicio: appointment.startTime,
     fin: appointment.endTime,
@@ -55,12 +57,12 @@ const mapRequestToCreate = (body) => {
   if (body.canal !== undefined) payload.channel = body.canal;
   if (body.estado !== undefined) payload.status = body.estado;
   if (body.observaciones !== undefined) payload.observations = body.observaciones;
-  
+
   return payload;
 };
 
 const mapRequestToUpdate = (body) => {
-  
+
   const payload = {};
 
   if (body.pacienteId !== undefined) payload.peopleId = body.pacienteId;
@@ -73,7 +75,7 @@ const mapRequestToUpdate = (body) => {
   if (body.estado !== undefined) payload.status = body.estado;
   if (body.motivo !== undefined) payload.reason = body.motivo;
   if (body.observaciones !== undefined) payload.observations = body.observaciones;
-  
+
   return payload;
 };
 
@@ -141,6 +143,10 @@ const createHandler = async (req, res, next) => {
   try {
     const payload = mapRequestToCreate(req.body);
     const appointment = await createAppointment(payload);
+    if (appointment.peopleId) {
+      // Pasamos null en userId porque tenemos el patientId (peopleId)
+      initializeIAContext(null, appointment.peopleId).catch(e => console.error('[IA Sync] Error:', e));
+    }
     return res.status(201).json({
       codigo: 201,
       mensaje: 'Cita creada exitosamente',
@@ -158,6 +164,9 @@ const updateHandler = async (req, res, next) => {
     const payload = mapRequestToUpdate(req.body);
     const razonCambio = req.body.razonCambio || null;
     const updated = await updateAppointment(appointment, payload, razonCambio);
+    if (updated.peopleId) {
+      initializeIAContext(null, updated.peopleId).catch(e => console.error('[IA Sync] Error:', e));
+    }
     return res.json({
       codigo: 200,
       mensaje: 'Cita actualizada exitosamente',
@@ -172,6 +181,9 @@ const deleteHandler = async (req, res, next) => {
   try {
     const { id } = req.params;
     await softDeleteAppointment(id);
+    if (deletedAppt && deletedAppt.peopleId) {
+      initializeIAContext(null, deletedAppt.peopleId).catch(e => console.error('[IA Sync] Error:', e));
+    }
     return res.status(200).json({
       codigo: 200,
       mensaje: 'Cita eliminada exitosamente',

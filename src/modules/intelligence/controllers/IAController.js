@@ -231,7 +231,7 @@ class IAController {
         appointments = await db.Appointment.findAll({
           where: {
             peopleId: patient.id,
-            status: { [Op.ne]: 'no asistio' } // Excluir solo las que no asistieron
+            status: { [Op.ne]: 'cancelada' } // Excluir solo las que no asistieron
           },
           include: [
             {
@@ -289,24 +289,43 @@ class IAController {
             }
           });
 
-          // Generar slots simples: tomar los primeros schedules no ocupados
+          // Generar slots libres de 30 minutos
           const slots = [];
+          const SLOT_DURATION = 30; // minutos
+
           for (const schedule of schedules) {
-            if (slots.length >= 3) break;
-            const isTaken = takenAppointments.some(app => {
-              if (!app.startTime || app.professionalId !== schedule.professionalId) return false;
-              const appointmentTime = new Date(app.startTime);
-              return Math.abs(appointmentTime.getTime() - new Date(schedule.startTime).getTime()) < 60000;
-            });
-            if (!isTaken) {
-              const prof = professionals.find(p => p.id === schedule.professionalId);
-              slots.push({
-                scheduleId: schedule.id,
-                professionalId: schedule.professionalId,
-                professional: prof ? `${prof.names} ${prof.surNames}` : null,
-                date_iso: schedule.startTime,
-                date_human: new Date(schedule.startTime).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+            let currentTime = new Date(schedule.startTime);
+            const endTime = new Date(schedule.endTime);
+            const prof = professionals.find(p => p.id === schedule.professionalId);
+
+            // Generar slots de 30 minutos dentro del rango del schedule
+            while (currentTime < endTime) {
+              const slotEnd = new Date(currentTime.getTime() + SLOT_DURATION * 60000);
+              if (slotEnd > endTime) break;
+
+              // Verificar si este slot específico está ocupado
+              const isTaken = takenAppointments.some(app => {
+                if (!app.startTime || app.professionalId !== schedule.professionalId) return false;
+                const appointmentTime = new Date(app.startTime);
+                return Math.abs(appointmentTime.getTime() - currentTime.getTime()) < 60000;
               });
+
+              if (!isTaken) {
+                slots.push({
+                  scheduleId: schedule.id,
+                  professionalId: schedule.professionalId,
+                  professional: prof ? `${prof.names} ${prof.surNames}` : null,
+                  startTime_iso: new Date(currentTime),
+                  endTime_iso: endTime,
+                  date_iso: new Date(currentTime),
+                  startTime_human: currentTime.toLocaleString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+                  endTime_human: endTime.toLocaleString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+                  date_human: currentTime.toLocaleString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                });
+              }
+
+              // Avanzar 30 minutos
+              currentTime = new Date(currentTime.getTime() + SLOT_DURATION * 60000);
             }
           }
           availability[spec] = slots;

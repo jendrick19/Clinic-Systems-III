@@ -19,13 +19,13 @@ class ConversationalAssistantService {
       console.error("⚠️ FALTA OPENAI_API_KEY");
     }
     this.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    
+
     // Cargar el contexto del prompt
     const promptPath = path.join(__dirname, '../prompts/AsistenteClinicaDental.md');
-    this.systemPrompt = fs.existsSync(promptPath) 
+    this.systemPrompt = fs.existsSync(promptPath)
       ? fs.readFileSync(promptPath, 'utf-8')
       : "Eres María, asistente virtual de Clínica Dental Plus.";
-    
+
     // Memoria de conversaciones por usuario (en producción usar Redis o BD)
     this.conversationMemory = new Map();
     // Estado por conversación (intenciones pendientes, datos parciales)
@@ -66,13 +66,13 @@ class ConversationalAssistantService {
           patient: convoState.initialContext.patient,
           appointments: convoState.initialContext.appointments || []
         };
-        
+
         // Guardar la disponibilidad completa para incluirla en el contexto
         fullAvailability = convoState.initialContext.availability;
-        
+
         // Extraer disponibilidad del contexto precargado basándose en la especialidad mencionada
         availabilityContext = this._extractAvailabilityFromPreloaded(
-          userMessage, 
+          userMessage,
           convoState.initialContext.availability
         );
       } else {
@@ -98,7 +98,7 @@ class ConversationalAssistantService {
 
       // 5. Construir el contexto completo (con reglas anti-contradicción)
       const contextualInfo = this._buildContextualInfo(userContext, availabilityContext, fullAvailability, convoState.lastShownOptions);
-      
+
       // LOG DETALLADO DEL CONTEXTO
       console.log('==========================================');
       console.log('[ChatIA CONTEXTO COMPLETO] Usuario:', userId);
@@ -162,14 +162,14 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
       });
 
       const assistantMessage = completion.choices[0].message;
-      
+
       // 7. Procesar si hay function call (ANTES de guardar en historial)
       let actionResult = null;
       let finalMessage = assistantMessage.content || "";
 
       if (assistantMessage.function_call) {
         console.log(`[ChatIA] Ejecutando función: ${assistantMessage.function_call.name}`);
-        
+
         actionResult = await this._executeFunctionCall(
           assistantMessage.function_call,
           userId,
@@ -191,8 +191,8 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
           conversationHistory.push(
             { role: "user", content: userMessage },
             { role: "assistant", content: assistantMessage.content, function_call: assistantMessage.function_call },
-            { 
-              role: "function", 
+            {
+              role: "function",
               name: assistantMessage.function_call.name,
               content: JSON.stringify(actionResult)
             }
@@ -200,7 +200,7 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
 
           // Reconstruir contexto actualizado después de la acción
           const updatedContext = this._buildContextualInfo(userContext, availabilityContext, fullAvailability, convoState.lastShownOptions);
-          
+
           // Hacer una segunda llamada a OpenAI para generar respuesta apropiada
           const followUpMessages = [
             {
@@ -219,7 +219,7 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
           });
 
           finalMessage = followUpCompletion.choices[0].message.content || finalMessage;
-          
+
           // Actualizar el último mensaje del asistente en el historial
           conversationHistory[conversationHistory.length - 3] = {
             role: "assistant",
@@ -270,7 +270,7 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
     try {
       // Obtener información del paciente
       const patient = await db.People.findByPk(patientId);
-      
+
       // Obtener citas activas del paciente
       const appointments = await db.Appointment.findAll({
         where: {
@@ -310,14 +310,14 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
     }
 
     const lowerMessage = userMessage.toLowerCase();
-    
+
     // Detectar especialidad mencionada en el mensaje
     const KNOWN_SPECIALTIES = [
       'odontología general', 'ortodoncia', 'endodoncia', 'periodoncia',
       'odontopediatría', 'cirugía oral', 'prótesis', 'implantología', 'estética'
     ];
 
-    const mentionedSpecialty = KNOWN_SPECIALTIES.find(s => 
+    const mentionedSpecialty = KNOWN_SPECIALTIES.find(s =>
       lowerMessage.includes(s.toLowerCase())
     );
 
@@ -328,7 +328,7 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
 
     // Buscar en la disponibilidad precargada
     const slots = preloadedAvailability[mentionedSpecialty];
-    
+
     if (!slots || slots.length === 0) {
       console.log(`[ChatIA] No hay slots disponibles para ${mentionedSpecialty}`);
       return {
@@ -338,7 +338,7 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
     }
 
     console.log(`[ChatIA] Encontrados ${slots.length} slots precargados para ${mentionedSpecialty}`);
-    
+
     // Convertir formato del contexto precargado al formato esperado
     const freeSlots = slots.map(slot => ({
       scheduleId: slot.scheduleId,
@@ -359,13 +359,13 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
    */
   async _getAvailabilityContext(userMessage) {
     const lowerMessage = userMessage.toLowerCase();
-    
+
     const KNOWN_SPECIALTIES = [
       'odontología general', 'ortodoncia', 'endodoncia', 'periodoncia',
       'odontopediatría', 'cirugía oral', 'prótesis', 'implantología', 'estética'
     ];
 
-    const mentionedSpecialty = KNOWN_SPECIALTIES.find(s => 
+    const mentionedSpecialty = KNOWN_SPECIALTIES.find(s =>
       lowerMessage.includes(s.toLowerCase())
     );
 
@@ -386,6 +386,7 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
       const professionalIds = professionals.map(p => p.id);
 
       // Buscar horarios disponibles
+      console.log(`[getAvailability] Buscando schedules para profesionales: ${professionalIds.join(', ')}`);
       const schedules = await db.Schedule.findAll({
         where: {
           professionalId: { [Op.in]: professionalIds },
@@ -394,6 +395,11 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
         },
         order: [['startTime', 'ASC']],
         limit: 15
+      });
+
+      console.log(`[getAvailability] Schedules encontrados: ${schedules.length}`);
+      schedules.forEach((s, idx) => {
+        console.log(`  Schedule ${idx + 1}: ID=${s.id}, Start=${s.startTime}, End=${s.endTime}, Prof=${s.professionalId}`);
       });
 
       // Obtener citas ya agendadas
@@ -405,12 +411,18 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
         }
       });
 
+      console.log(`[getAvailability] Citas ocupadas encontradas: ${takenAppointments.length}`);
+      takenAppointments.forEach((app, idx) => {
+        console.log(`  Cita ${idx + 1}: ID=${app.id}, Start=${app.startTime}, Prof=${app.professionalId}, Status=${app.status}`);
+      });
+
       // Generar slots libres
       const freeSlots = this._generateFreeSlots(schedules, takenAppointments, professionals);
 
       return {
         specialty: mentionedSpecialty,
-        freeSlots: freeSlots.slice(0, 3) // Máximo 3 opciones
+        freeSlots: freeSlots.slice(0, 15) // Enviar hasta 15 slots para que el agente vea el rango completo de disponibilidad
+        // El agente decidirá cuáles 3 mostrar al paciente
       };
     } catch (error) {
       console.error("Error obteniendo disponibilidad:", error);
@@ -431,9 +443,25 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
       profMap[p.id] = `Dr. ${p.names} ${p.surNames} (${p.specialty})`;
     });
 
+    console.log('[_generateFreeSlots] Generando slots libres...');
+    console.log(`[_generateFreeSlots] Total schedules recibidos: ${schedules.length}`);
+    console.log(`[_generateFreeSlots] Total citas ocupadas: ${takenAppointments.length}`);
+
     for (const schedule of schedules) {
       let currentTime = new Date(schedule.startTime);
       const endTime = new Date(schedule.endTime);
+
+      console.log(`\n[_generateFreeSlots] Procesando Schedule ID: ${schedule.id}`);
+      console.log(`  - Professional ID: ${schedule.professionalId}`);
+      console.log(`  - Start Time: ${currentTime.toISOString()} (${currentTime.toLocaleString('es-ES', { timeZone: 'America/Caracas' })})`);
+      console.log(`  - End Time: ${endTime.toISOString()} (${endTime.toLocaleString('es-ES', { timeZone: 'America/Caracas' })})`);
+      
+      const diffHours = (endTime - currentTime) / (1000 * 60 * 60);
+      console.log(`  - Duración total: ${diffHours.toFixed(2)} horas`);
+      console.log(`  - Slots posibles: ${Math.floor(diffHours * 2)}`);
+
+      let slotsGeneratedForSchedule = 0;
+      let slotsBlockedForSchedule = 0;
 
       while (currentTime < endTime) {
         const slotEnd = new Date(currentTime.getTime() + SLOT_DURATION * 60000);
@@ -443,7 +471,8 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
         const isTaken = takenAppointments.some(app => {
           if (!app.startTime || app.professionalId !== schedule.professionalId) return false;
           const appointmentTime = new Date(app.startTime);
-          return Math.abs(appointmentTime.getTime() - currentTime.getTime()) < 60000;
+          const timeDiff = Math.abs(appointmentTime.getTime() - currentTime.getTime());
+          return timeDiff < 60000;
         });
 
         if (!isTaken) {
@@ -461,12 +490,19 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
               timeZone: 'America/Caracas'
             })
           });
+          slotsGeneratedForSchedule++;
+        } else {
+          slotsBlockedForSchedule++;
         }
 
         currentTime = new Date(currentTime.getTime() + SLOT_DURATION * 60000);
       }
+
+      console.log(`  - Slots libres generados: ${slotsGeneratedForSchedule}`);
+      console.log(`  - Slots bloqueados: ${slotsBlockedForSchedule}`);
     }
 
+    console.log(`\n[_generateFreeSlots] ✅ Total slots libres generados: ${freeSlots.length}`);
     return freeSlots;
   }
 
@@ -505,10 +541,10 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
             minute: '2-digit'
           });
         }
-        
+
         const professionalName = apt.professional || (apt.professional?.names && apt.professional?.surNames ? `${apt.professional.names} ${apt.professional.surNames}` : 'No especificado');
         const specialty = apt.specialty || apt.professional?.specialty || 'No especificada';
-        
+
         info += `- CITA_${idx + 1}: ID=${apt.id} | ${dateStr} | ${professionalName} | ESPECIALIDAD=${specialty}\n`;
       });
       info += "\n";
@@ -521,16 +557,49 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
       info += `ESPECIALIDAD_DETECTADA: ${availabilityContext.specialty}\n`;
       info += `HORARIOS_DISPONIBLES_COUNT: ${availabilityContext.freeSlots.length}\n`;
       info += `HORARIOS_DISPONIBLES (OPCIONES PARA MOSTRAR AL PACIENTE):\n`;
-      availabilityContext.freeSlots.forEach((slot, idx) => {
-        const startTimeISO = slot.startTime.toISOString();
-        info += `- OPCION_${idx + 1}:\n`;
-        info += `  SCHEDULE_ID: ${slot.scheduleId}\n`;
-        info += `  START_TIME_ISO: ${startTimeISO}\n`;
-        info += `  FECHA_LEGIBLE: ${slot.dateHuman}\n`;
-        info += `  PROFESIONAL: ${slot.professionalName}\n`;
+      
+      // Agrupar slots por scheduleId para mostrar el rango completo
+      const slotsBySchedule = {};
+      availabilityContext.freeSlots.forEach(slot => {
+        if (!slotsBySchedule[slot.scheduleId]) {
+          slotsBySchedule[slot.scheduleId] = {
+            scheduleId: slot.scheduleId,
+            professionalName: slot.professionalName,
+            slots: []
+          };
+        }
+        slotsBySchedule[slot.scheduleId].slots.push(slot);
       });
+      
+      let optionNumber = 0;
+      Object.values(slotsBySchedule).forEach(scheduleGroup => {
+        // Mostrar información de la agenda completa
+        if (scheduleGroup.slots.length > 0) {
+          const firstSlot = scheduleGroup.slots[0];
+          const lastSlot = scheduleGroup.slots[scheduleGroup.slots.length - 1];
+          
+          info += `\n📅 AGENDA_ID: ${scheduleGroup.scheduleId} - ${scheduleGroup.professionalName}\n`;
+          info += `   (Esta agenda tiene ${scheduleGroup.slots.length} slots libres de 30 minutos)\n\n`;
+        }
+        
+        // Mostrar cada slot individual
+        scheduleGroup.slots.forEach(slot => {
+          optionNumber++;
+          const startTimeISO = slot.startTime.toISOString();
+          info += `- OPCION_${optionNumber}:\n`;
+          info += `  SCHEDULE_ID: ${slot.scheduleId}\n`;
+          info += `  START_TIME_ISO: ${startTimeISO}\n`;
+          info += `  FECHA_LEGIBLE: ${slot.dateHuman}\n`;
+          info += `  PROFESIONAL: ${slot.professionalName}\n`;
+        });
+      });
+      
       info += "\n";
-      info += "⚠️ IMPORTANTE: Cuando el paciente elija una opción (diciendo '1', 'la primera', 'sí', 'esa', etc.),\n";
+      info += "⚠️ IMPORTANTE: Presenta los horarios al paciente mencionando primero el rango general de la agenda,\n";
+      info += "luego muestra máximo 3 slots específicos disponibles. Ejemplo:\n";
+      info += "\"El Dr. X tiene disponibilidad el [fecha] desde las [hora inicio] hasta las [hora fin].\n";
+      info += "Estos horarios están libres: 1) 9:00 AM, 2) 11:00 AM, 3) 2:00 PM\"\n\n";
+      info += "⚠️ Cuando el paciente elija una opción (diciendo '1', 'la primera', 'sí', 'esa', etc.),\n";
       info += "debes llamar INMEDIATAMENTE a agendar_cita usando el SCHEDULE_ID y START_TIME_ISO de esa opción.\n\n";
     } else {
       // Si no detectamos especialidad, no forzamos un "0" (para evitar que el modelo diga "no hay" sin que se haya pedido algo).
@@ -556,7 +625,7 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
     if (fullAvailability && typeof fullAvailability === 'object') {
       info += "\n=== DISPONIBILIDAD COMPLETA POR ESPECIALIDAD ===\n";
       info += "(Usa esta información si el usuario pregunta por otras especialidades)\n\n";
-      
+
       Object.keys(fullAvailability).forEach(specialty => {
         const slots = fullAvailability[specialty];
         if (slots && Array.isArray(slots) && slots.length > 0) {
@@ -564,7 +633,9 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
           slots.slice(0, 3).forEach((slot, idx) => {
             info += `  OPCION_${idx + 1}:\n`;
             info += `    SCHEDULE_ID: ${slot.scheduleId}\n`;
-            info += `    START_TIME_ISO: ${slot.date_iso}\n`;
+            info += `    START_TIME_ISO: ${slot.startTime_iso || slot.date_iso}\n`;
+            info += `    END_TIME_ISO: ${slot.endTime_iso}\n`;
+            info += `    HORARIO_COMPLETO: ${slot.startTime_human || slot.date_human} hasta ${slot.endTime_human}\n`;
             info += `    FECHA_LEGIBLE: ${slot.date_human}\n`;
             info += `    PROFESIONAL: ${slot.professional}\n`;
           });
@@ -706,22 +777,22 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
       switch (functionName) {
         case "agendar_cita":
           return await this._agendarCita(patientId, args);
-        
+
         case "confirmar_cita":
           return await this._confirmarCita(patientId, args);
-        
+
         case "reagendar_cita":
           return await this._reagendarCita(patientId, args);
-        
+
         case "cancelar_cita":
           return await this._cancelarCita(patientId, args);
-        
+
         case "consultar_citas":
           return await this._consultarCitas(patientId);
-        
+
         case "consultar_citas_por_documento":
           return await this._consultarCitasPorDocumento(args);
-        
+
         default:
           return { success: false, message: "Función no reconocida" };
       }
@@ -769,9 +840,9 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
 
       // 2. Verificar que el Schedule esté en estado 'abierta'
       if (schedule.status !== 'abierta') {
-        return { 
-          success: false, 
-          message: `El horario no está disponible (estado: ${schedule.status})` 
+        return {
+          success: false,
+          message: `El horario no está disponible (estado: ${schedule.status})`
         };
       }
 
@@ -832,14 +903,14 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
           where: { status: true },
           order: [['id', 'ASC']]
         });
-        
+
         if (!defaultUnit) {
           return {
             success: false,
             message: "Error de configuración: No hay unidades de atención disponibles. Contacta al administrador."
           };
         }
-        
+
         schedule.unitId = defaultUnit.id;
         console.log('[_agendarCita] Usando unitId por defecto:', defaultUnit.id);
       }
@@ -877,18 +948,21 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
       console.log(`[_agendarCita] ✅ Cita ID=${appointment.id} creada exitosamente para paciente ${patientId}`);
       console.log('========== FIN _agendarCita (ÉXITO) ==========');
 
+      // Refrescar el contexto de la IA con las citas actualizadas
+      await this._refreshUserContext(null, patientId);
+
       // 9. Retornar información completa de la cita creada
-    return {
-      success: true,
-      message: "Cita agendada exitosamente",
-      appointmentId: appointment.id,
-      appointment: {
-        id: appointment.id,
-        startTime: appointment.startTime,
+      return {
+        success: true,
+        message: "Cita agendada exitosamente",
+        appointmentId: appointment.id,
+        appointment: {
+          id: appointment.id,
+          startTime: appointment.startTime,
           endTime: appointment.endTime,
-        status: appointment.status,
+          status: appointment.status,
           reason: appointment.reason,
-          professional: schedule.professional ? 
+          professional: schedule.professional ?
             `${schedule.professional.names} ${schedule.professional.surNames}` : null,
           specialty: schedule.professional?.specialty || null,
           dateHuman: requestedStartTime.toLocaleString('es-ES', {
@@ -906,12 +980,12 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
     } catch (error) {
       console.error('[_agendarCita ERROR]:', error);
       console.error('[_agendarCita ERROR Stack]:', error.stack);
-      
+
       // Si es un error de validación de Sequelize, extraer detalles
       if (error.name === 'SequelizeValidationError' || error.name === 'SequelizeDatabaseError') {
         console.error('[_agendarCita ERROR Details]:', JSON.stringify(error.errors || error, null, 2));
       }
-      
+
       return {
         success: false,
         message: "Error al crear la cita. Por favor intenta nuevamente.",
@@ -974,7 +1048,7 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
         id: apt.id,
         startTime: apt.startTime,
         endTime: apt.endTime,
-        professionalName: apt.professional ? 
+        professionalName: apt.professional ?
           `${apt.professional.names} ${apt.professional.surNames}` : 'Doctor'
       };
     }
@@ -1032,43 +1106,43 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
     const { appointmentId } = args;
 
     try {
-    console.log(`[_confirmarCita] Intentando confirmar cita ID=${appointmentId} para patientId=${patientId}`);
+      console.log(`[_confirmarCita] Intentando confirmar cita ID=${appointmentId} para patientId=${patientId}`);
 
-    // Verificar que la cita existe y pertenece al paciente
-    const appointment = await db.Appointment.findOne({
-      where: {
-        id: appointmentId,
-        peopleId: patientId
-      },
-      include: [
-        {
-          model: db.Professional,
-          as: 'professional',
-          attributes: ['names', 'surNames', 'specialty']
-        }
-      ]
-    });
+      // Verificar que la cita existe y pertenece al paciente
+      const appointment = await db.Appointment.findOne({
+        where: {
+          id: appointmentId,
+          peopleId: patientId
+        },
+        include: [
+          {
+            model: db.Professional,
+            as: 'professional',
+            attributes: ['names', 'surNames', 'specialty']
+          }
+        ]
+      });
 
-    if (!appointment) {
-      return { 
-        success: false, 
-        message: "Cita no encontrada o no pertenece al paciente" 
-      };
-    }
+      if (!appointment) {
+        return {
+          success: false,
+          message: "Cita no encontrada o no pertenece al paciente"
+        };
+      }
 
-    // Verificar que el estado actual sea 'solicitada'
-    if (appointment.status !== 'solicitada') {
-      return { 
-        success: false, 
-        message: `No se puede confirmar. La cita está en estado '${appointment.status}'. Solo se pueden confirmar citas en estado 'solicitada'.`,
-        currentStatus: appointment.status
-      };
-    }
+      // Verificar que el estado actual sea 'solicitada'
+      if (appointment.status !== 'solicitada') {
+        return {
+          success: false,
+          message: `No se puede confirmar. La cita está en estado '${appointment.status}'. Solo se pueden confirmar citas en estado 'solicitada'.`,
+          currentStatus: appointment.status
+        };
+      }
 
-    // Actualizar el estado a 'confirmada'
-    const previousStatus = appointment.status;
-    appointment.status = 'confirmada';
-    await appointment.save();
+      // Actualizar el estado a 'confirmada'
+      const previousStatus = appointment.status;
+      appointment.status = 'confirmada';
+      await appointment.save();
 
       // Crear registro en el historial
       await db.AppointmentHistory.create({
@@ -1083,31 +1157,31 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
         changedAt: new Date()
       });
 
-    console.log(`[_confirmarCita] ✅ Cita ID=${appointmentId} confirmada exitosamente. Estado anterior: ${previousStatus} → nuevo: confirmada`);
+      console.log(`[_confirmarCita] ✅ Cita ID=${appointmentId} confirmada exitosamente. Estado anterior: ${previousStatus} → nuevo: confirmada`);
 
-    return {
-      success: true,
-      message: "Cita confirmada exitosamente",
-      appointmentId: appointment.id,
-      appointment: {
-        id: appointment.id,
-        startTime: appointment.startTime,
-        previousStatus: previousStatus,
-        newStatus: 'confirmada',
-        reason: appointment.reason,
-        professional: appointment.professional ? 
-          `${appointment.professional.names} ${appointment.professional.surNames}` : null,
-        specialty: appointment.professional?.specialty || null,
-        dateHuman: new Date(appointment.startTime).toLocaleString('es-ES', {
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          timeZone: 'America/Caracas'
-        })
-      }
-    };
+      return {
+        success: true,
+        message: "Cita confirmada exitosamente",
+        appointmentId: appointment.id,
+        appointment: {
+          id: appointment.id,
+          startTime: appointment.startTime,
+          previousStatus: previousStatus,
+          newStatus: 'confirmada',
+          reason: appointment.reason,
+          professional: appointment.professional ?
+            `${appointment.professional.names} ${appointment.professional.surNames}` : null,
+          specialty: appointment.professional?.specialty || null,
+          dateHuman: new Date(appointment.startTime).toLocaleString('es-ES', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            timeZone: 'America/Caracas'
+          })
+        }
+      };
 
     } catch (error) {
       console.error('[_confirmarCita ERROR]:', error);
@@ -1127,10 +1201,10 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
 
     try {
       // 1. Verificar que la cita pertenece al paciente
-    const appointment = await db.Appointment.findOne({
-      where: {
-        id: appointmentId,
-        peopleId: patientId
+      const appointment = await db.Appointment.findOne({
+        where: {
+          id: appointmentId,
+          peopleId: patientId
         },
         include: [
           {
@@ -1139,11 +1213,11 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
             attributes: ['names', 'surNames', 'specialty']
           }
         ]
-    });
+      });
 
-    if (!appointment) {
-      return { success: false, message: "Cita no encontrada o no pertenece al paciente" };
-    }
+      if (!appointment) {
+        return { success: false, message: "Cita no encontrada o no pertenece al paciente" };
+      }
 
       // 2. Guardar valores antiguos para el historial
       const oldStartTime = appointment.startTime;
@@ -1162,15 +1236,15 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
         ]
       });
 
-    if (!newSchedule) {
-      return { success: false, message: "Nuevo horario no encontrado" };
-    }
+      if (!newSchedule) {
+        return { success: false, message: "Nuevo horario no encontrado" };
+      }
 
       // 4. Verificar que el Schedule esté abierto
       if (newSchedule.status !== 'abierta') {
-        return { 
-          success: false, 
-          message: `El nuevo horario no está disponible (estado: ${newSchedule.status})` 
+        return {
+          success: false,
+          message: `El nuevo horario no está disponible (estado: ${newSchedule.status})`
         };
       }
 
@@ -1227,14 +1301,14 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
           where: { status: true },
           order: [['id', 'ASC']]
         });
-        
+
         if (!defaultUnit) {
           return {
             success: false,
             message: "Error de configuración: No hay unidades de atención disponibles."
           };
         }
-        
+
         finalUnitId = defaultUnit.id;
         console.log('[_reagendarCita] Usando unitId por defecto:', finalUnitId);
       }
@@ -1262,15 +1336,18 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
 
       console.log(`[_reagendarCita] ✅ Cita ID=${appointment.id} reagendada exitosamente`);
 
-    return {
-      success: true,
-      message: "Cita reagendada exitosamente",
+      // Refrescar el contexto de la IA con las citas actualizadas
+      await this._refreshUserContext(null, patientId);
+
+      return {
+        success: true,
+        message: "Cita reagendada exitosamente",
         appointmentId: appointment.id,
         appointment: {
           id: appointment.id,
           oldDateTime: oldStartTime.toLocaleString('es-ES'),
           newDateTime: requestedStartTime.toLocaleString('es-ES'),
-          professional: newSchedule.professional ? 
+          professional: newSchedule.professional ?
             `${newSchedule.professional.names} ${newSchedule.professional.surNames}` : null,
           specialty: newSchedule.professional?.specialty || null
         }
@@ -1293,10 +1370,10 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
     const { appointmentId } = args;
 
     try {
-    const appointment = await db.Appointment.findOne({
-      where: {
-        id: appointmentId,
-        peopleId: patientId
+      const appointment = await db.Appointment.findOne({
+        where: {
+          id: appointmentId,
+          peopleId: patientId
         },
         include: [
           {
@@ -1305,24 +1382,24 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
             attributes: ['names', 'surNames', 'specialty']
           }
         ]
-    });
+      });
 
-    if (!appointment) {
-      return { success: false, message: "Cita no encontrada o no pertenece al paciente" };
-    }
+      if (!appointment) {
+        return { success: false, message: "Cita no encontrada o no pertenece al paciente" };
+      }
 
       // Guardar estado anterior para el historial
       const oldStatus = appointment.status;
 
       // Actualizar estado a 'no asistio' (cancelada)
-    appointment.status = 'no asistio';
-    await appointment.save();
+      appointment.status = 'cancelada';
+      await appointment.save();
 
       // Crear registro en el historial
       await db.AppointmentHistory.create({
         appointmentId: appointment.id,
         oldStatus: oldStatus,
-        newStatus: 'no asistio',
+        newStatus: 'cancelada',
         oldStartTime: appointment.startTime,
         newStartTime: appointment.startTime,
         oldEndTime: appointment.endTime,
@@ -1333,14 +1410,17 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
 
       console.log(`[_cancelarCita] ✅ Cita ID=${appointment.id} cancelada exitosamente`);
 
-    return {
-      success: true,
-      message: "Cita cancelada exitosamente",
+      // Refrescar el contexto de la IA con las citas actualizadas
+      await this._refreshUserContext(null, patientId);
+
+      return {
+        success: true,
+        message: "Cita cancelada exitosamente",
         appointmentId: appointment.id,
         appointment: {
           id: appointment.id,
           dateTime: appointment.startTime.toLocaleString('es-ES'),
-          professional: appointment.professional ? 
+          professional: appointment.professional ?
             `${appointment.professional.names} ${appointment.professional.surNames}` : null
         }
       };
@@ -1535,6 +1615,131 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
     }
     console.log(`[ChatIA setInitialContext] Availability:`, Object.keys(context.availability || {}).length, 'especialidades');
     console.log('==========================================');
+  }
+
+  /**
+   * Actualiza el contexto del usuario SIN borrar el historial de conversación
+   * Usar este método cuando se modifiquen citas durante una conversación activa
+   * @param {number} userId
+   * @param {Object} context - { patient, appointments, availability }
+   */
+  updateContext(userId, context) {
+    const conversationKey = `user_${userId}`;
+    // NO borrar el historial de conversación, solo actualizar el contexto
+    let convoState = this.conversationState.get(conversationKey) || {};
+    convoState.initialContext = context;
+    this.conversationState.set(conversationKey, convoState);
+
+    console.log('==========================================');
+    console.log(`[ChatIA updateContext] Usuario ${userId} - ACTUALIZACIÓN SIN BORRAR CONVERSACIÓN`);
+    console.log(`[ChatIA updateContext] Paciente:`, context.patient?.names, context.patient?.surNames);
+    console.log(`[ChatIA updateContext] Citas: ${context.appointments?.length || 0}`);
+    if (context.appointments && context.appointments.length > 0) {
+      context.appointments.forEach((apt, idx) => {
+        console.log(`  ${idx + 1}. ID=${apt.id} | ${apt.date_human} | ${apt.professional} | ${apt.status}`);
+      });
+    }
+    console.log(`[ChatIA updateContext] Availability:`, Object.keys(context.availability || {}).length, 'especialidades');
+    console.log('==========================================');
+  }
+
+  /**
+   * Refresca el contexto del usuario después de operaciones de citas
+   * IMPORTANTE: Este método actualiza el contexto SIN borrar el historial de conversación
+   * @param {number} userId - ID del usuario
+   * @param {number} patientId - ID del paciente
+   */
+  async _refreshUserContext(userId, patientId) {
+    try {
+      console.log(`[ChatIA _refreshUserContext] Iniciando actualización para userId=${userId || 'N/A'}, patientId=${patientId}`);
+
+      // Obtener información del paciente
+      const PeopleAttended = db.modules.operative.PeopleAttended;
+      let patient = null;
+
+      if (patientId) {
+        patient = await PeopleAttended.findByPk(patientId);
+      } else if (userId) {
+        patient = await PeopleAttended.findByPk(userId);
+      }
+
+      if (!patient) {
+        console.warn(`[ChatIA _refreshUserContext] No se encontró paciente`);
+        return;
+      }
+
+      // Obtener citas activas del paciente
+      const appointments = await db.Appointment.findAll({
+        where: {
+          peopleId: patient.id,
+          // CORRECCIÓN CRÍTICA: Usar Op.notIn en lugar de Op.ne para arrays
+          status: { [Op.notIn]: ['no asistio', 'cancelada'] }
+        },
+        include: [
+          {
+            model: db.Professional,
+            as: 'professional',
+            attributes: ['names', 'surNames', 'specialty']
+          }
+        ],
+        order: [['startTime', 'ASC']]
+      });
+
+      console.log(`[ChatIA _refreshUserContext] Citas encontradas: ${appointments.length}`);
+
+      // Formatear citas igual que en IAContextService
+      const appointmentsData = appointments.map(apt => ({
+        id: apt.id,
+        date_iso: apt.startTime,
+        date_human: new Date(apt.startTime).toLocaleString('es-ES', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          timeZone: 'America/Caracas'
+        }),
+        professional: apt.professional ? `${apt.professional.names} ${apt.professional.surNames}` : null,
+        specialty: apt.professional ? apt.professional.specialty : null,
+        status: apt.status,
+        reason: apt.description || null
+      }));
+
+      // Preparar contexto actualizado
+      const effectiveUserId = userId || patientId;
+
+      // Intentar preservar la disponibilidad existente para no perderla
+      let existingAvailability = {};
+      const conversationKey = `user_${effectiveUserId}`;
+      const currentState = this.conversationState.get(conversationKey);
+      if (currentState && currentState.initialContext && currentState.initialContext.availability) {
+        existingAvailability = currentState.initialContext.availability;
+        console.log(`[ChatIA _refreshUserContext] Preservando disponibilidad existente: ${Object.keys(existingAvailability).length} especialidades`);
+      }
+
+      const contextData = {
+        patient: {
+          id: patient.id,
+          names: patient.names,
+          surNames: patient.surNames,
+          documentType: patient.documentType,
+          documentId: patient.documentId,
+          email: patient.email,
+          phone: patient.phone,
+          dateOfBirth: patient.dateOfBirth
+        },
+        appointments: appointmentsData,
+        availability: existingAvailability // Usar disponibilidad preservada
+      };
+
+      // Usar updateContext en lugar de setInitialContext para NO borrar la conversación
+      this.updateContext(effectiveUserId, contextData);
+
+      console.log(`[ChatIA _refreshUserContext] ✅ Contexto actualizado exitosamente`);
+      return contextData;
+    } catch (error) {
+      console.error(`[ChatIA _refreshUserContext] Error:`, error);
+    }
   }
 }
 
