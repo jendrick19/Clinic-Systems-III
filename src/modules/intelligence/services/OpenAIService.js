@@ -96,12 +96,12 @@ class OpenAIService {
       const SLOT_DURATION = 30; // Minutos
 
       for (const schedule of schedules) {
-        let currentTime = new Date(schedule.startTime);
-        const endTime = new Date(schedule.endTime);
+        let currentTime = getUTCDateFromSequelize(schedule.startTime);
+        const endTime = getUTCDateFromSequelize(schedule.endTime);
 
-        while (currentTime < endTime) {
+        while (currentTime.getTime() < endTime.getTime()) {
           const slotEnd = new Date(currentTime.getTime() + SLOT_DURATION * 60000);
-          if (slotEnd > endTime) break; 
+          if (slotEnd.getTime() > endTime.getTime()) break; 
 
           // --- COMPARACIÓN DE FECHAS ---
           const isTaken = takenAppointments.some(app => {
@@ -109,9 +109,9 @@ class OpenAIService {
                 // CORRECCIÓN: Usamos app.startTime
                 if (!app.startTime) return false;
 
-                const appointmentFullDate = new Date(app.startTime);
+                const appointmentFullDate = getUTCDateFromSequelize(app.startTime);
                 
-                if (isNaN(appointmentFullDate.getTime())) return false;
+                if (!appointmentFullDate || isNaN(appointmentFullDate.getTime())) return false;
 
                 // Comparamos si es el mismo doctor Y la misma hora (margen 1 min)
                 return app.professionalId === schedule.professionalId && 
@@ -124,12 +124,8 @@ class OpenAIService {
           if (!isTaken) {
             const doctorInfo = professionalsMap[schedule.professionalId] || "Doctor";
             
-            // HORA VENEZUELA
-            const fechaBonita = currentTime.toLocaleDateString('es-ES', { 
-                weekday: 'long', day: 'numeric', month: 'long', 
-                hour: '2-digit', minute:'2-digit', 
-                timeZone: 'America/Caracas' 
-            });
+            // HORA SIN CONVERSIÓN (usa la hora tal cual está en la BD)
+            const fechaBonita = formatDateHumanWithoutTimezone(currentTime);
 
             freeSlotsList.push(`- ID_AGENDA: ${schedule.id} | ${doctorInfo} | ${fechaBonita}`);
           }
@@ -201,6 +197,44 @@ class OpenAIService {
       return { message: "Ocurrió un error interno." };
     }
   }
+}
+
+/**
+ * Obtiene un objeto Date con componentes UTC desde un objeto Date de Sequelize
+ * @param {Date|string} sequelizeDate - Fecha que viene de Sequelize
+ * @returns {Date} Nueva fecha con componentes UTC preservados
+ */
+function getUTCDateFromSequelize(sequelizeDate) {
+  if (!sequelizeDate) return null;
+  const date = sequelizeDate instanceof Date ? sequelizeDate : new Date(sequelizeDate);
+  return new Date(Date.UTC(
+    date.getUTCFullYear(),
+    date.getUTCMonth(),
+    date.getUTCDate(),
+    date.getUTCHours(),
+    date.getUTCMinutes(),
+    date.getUTCSeconds(),
+    date.getUTCMilliseconds()
+  ));
+}
+
+/**
+ * Formatea una fecha de forma legible sin conversión de timezone
+ * @param {Date} date - Fecha a formatear
+ * @returns {string} Fecha formateada legible (ej: "lunes 15 de enero, 13:00")
+ */
+function formatDateHumanWithoutTimezone(date) {
+  if (!date) return '';
+  const weekdays = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+  const months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  
+  const weekday = weekdays[date.getUTCDay()];
+  const day = date.getUTCDate();
+  const month = months[date.getUTCMonth()];
+  const hours = String(date.getUTCHours()).padStart(2, '0');
+  const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+  
+  return `${weekday} ${day} de ${month}, ${hours}:${minutes}`;
 }
 
 module.exports = new OpenAIService();

@@ -128,6 +128,17 @@ REGLAS ESTRICTAS (MUY IMPORTANTE):
 - Recomienda MÁXIMO 3 horarios y SOLO los que aparecen listados en HORARIOS_DISPONIBLES.
 - El CONTEXTO ACTUAL ya contiene TODA la información del paciente. NO necesitas hacer consultas adicionales.
 
+- El "ÚLTIMO TURNO DISPONIBLE" indicado en el contexto es la hora de inicio de la última cita posible. Usa esa hora para decirle al usuario hasta cuándo atiendes.
+   - **BÚSQUEDA INTELIGENTE**: Si el usuario pide una hora específica (ej: "2 pm") y esa hora NO aparece exacta en la lista de opciones:
+     - NO muestres los primeros horarios de la mañana por defecto.
+     - BUSCA en la lista "LISTA_COMPLETA_HORARIOS" los horarios más cercanos (anteriores y posteriores) a la hora pedida.
+     - Ejemplo: "A las 2:00 pm está ocupado, pero tengo libre a las 1:30 pm o 2:30 pm".
+
+- Si el usuario dice "mejor a las X", "cámbiala a las Y" o "no, prefiero a las Z":
+   - Trátalo como una instrucción inmediata de cambio.
+   - Busca la nueva hora en la lista disponible.
+   - Si ya se creó una cita, usa la función 'reagendar_cita'. Si no, usa 'agendar_cita'.
+
 🔴 REGLA CRÍTICA - AGENDAR CITAS:
 Cuando el paciente confirma que quiere una de las opciones que mostraste (diciendo "sí", "la primera", "esa", "ok", "la 2", etc.),
 debes INMEDIATAMENTE llamar a la función agendar_cita usando:
@@ -135,6 +146,7 @@ debes INMEDIATAMENTE llamar a la función agendar_cita usando:
   - startTime: el START_TIME_ISO de esa opción (está en el contexto)
   - reason: la especialidad o motivo
 NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirmó. EJECUTA la función agendar_cita.
+
 `;
 
       const messages = [
@@ -350,7 +362,7 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
 
     return {
       specialty: mentionedSpecialty,
-      freeSlots: freeSlots.slice(0, 3) // Máximo 3 opciones
+      freeSlots: freeSlots.slice(0, 48) // Máximo 3 opciones
     };
   }
 
@@ -421,7 +433,7 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
 
       return {
         specialty: mentionedSpecialty,
-        freeSlots: freeSlots.slice(0, 15) // Enviar hasta 15 slots para que el agente vea el rango completo de disponibilidad
+        freeSlots: freeSlots.slice(0, 48) // Enviar hasta 48 slots para que el agente vea el rango completo de disponibilidad
         // El agente decidirá cuáles 3 mostrar al paciente
       };
     } catch (error) {
@@ -448,29 +460,30 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
     console.log(`[_generateFreeSlots] Total citas ocupadas: ${takenAppointments.length}`);
 
     for (const schedule of schedules) {
-      let currentTime = new Date(schedule.startTime);
-      const endTime = new Date(schedule.endTime);
+      // Trabajar directamente con el objeto Date de Sequelize usando componentes UTC
+      let currentTime = getUTCDateFromSequelize(schedule.startTime);
+      const endTime = getUTCDateFromSequelize(schedule.endTime);
 
       console.log(`\n[_generateFreeSlots] Procesando Schedule ID: ${schedule.id}`);
       console.log(`  - Professional ID: ${schedule.professionalId}`);
-      console.log(`  - Start Time: ${currentTime.toISOString()} (${currentTime.toLocaleString('es-ES', { timeZone: 'America/Caracas' })})`);
-      console.log(`  - End Time: ${endTime.toISOString()} (${endTime.toLocaleString('es-ES', { timeZone: 'America/Caracas' })})`);
+      console.log(`  - Start Time original BD: ${schedule.startTime} -> UTC: ${formatDateWithoutTimezone(currentTime)}`);
+      console.log(`  - End Time original BD: ${schedule.endTime} -> UTC: ${formatDateWithoutTimezone(endTime)}`);
       
-      const diffHours = (endTime - currentTime) / (1000 * 60 * 60);
+      const diffHours = (endTime.getTime() - currentTime.getTime()) / (1000 * 60 * 60);
       console.log(`  - Duración total: ${diffHours.toFixed(2)} horas`);
       console.log(`  - Slots posibles: ${Math.floor(diffHours * 2)}`);
 
       let slotsGeneratedForSchedule = 0;
       let slotsBlockedForSchedule = 0;
 
-      while (currentTime < endTime) {
+      while (currentTime.getTime() < endTime.getTime()) {
         const slotEnd = new Date(currentTime.getTime() + SLOT_DURATION * 60000);
-        if (slotEnd > endTime) break;
+        if (slotEnd.getTime() > endTime.getTime()) break;
 
         // Verificar si está ocupado
         const isTaken = takenAppointments.some(app => {
           if (!app.startTime || app.professionalId !== schedule.professionalId) return false;
-          const appointmentTime = new Date(app.startTime);
+          const appointmentTime = getUTCDateFromSequelize(app.startTime);
           const timeDiff = Math.abs(appointmentTime.getTime() - currentTime.getTime());
           return timeDiff < 60000;
         });
@@ -481,14 +494,7 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
             professionalId: schedule.professionalId,
             professionalName: profMap[schedule.professionalId] || "Doctor",
             startTime: new Date(currentTime),
-            dateHuman: currentTime.toLocaleDateString('es-ES', {
-              weekday: 'long',
-              day: 'numeric',
-              month: 'long',
-              hour: '2-digit',
-              minute: '2-digit',
-              timeZone: 'America/Caracas'
-            })
+            dateHuman: formatDateHumanWithoutTimezone(currentTime)
           });
           slotsGeneratedForSchedule++;
         } else {
@@ -532,14 +538,8 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
         if (apt.date_human) {
           dateStr = apt.date_human; // Ya viene formateado del contexto precargado
         } else if (apt.startTime) {
-          const date = new Date(apt.startTime);
-          dateStr = date.toLocaleDateString('es-ES', {
-            weekday: 'long',
-            day: 'numeric',
-            month: 'long',
-            hour: '2-digit',
-            minute: '2-digit'
-          });
+          const date = getUTCDateFromSequelize(apt.startTime);
+          dateStr = formatDateHumanWithoutTimezone(date);
         }
 
         const professionalName = apt.professional || (apt.professional?.names && apt.professional?.surNames ? `${apt.professional.names} ${apt.professional.surNames}` : 'No especificado');
@@ -556,53 +556,28 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
     if (availabilityContext && availabilityContext.freeSlots) {
       info += `ESPECIALIDAD_DETECTADA: ${availabilityContext.specialty}\n`;
       info += `HORARIOS_DISPONIBLES_COUNT: ${availabilityContext.freeSlots.length}\n`;
-      info += `HORARIOS_DISPONIBLES (OPCIONES PARA MOSTRAR AL PACIENTE):\n`;
-      
-      // Agrupar slots por scheduleId para mostrar el rango completo
-      const slotsBySchedule = {};
-      availabilityContext.freeSlots.forEach(slot => {
-        if (!slotsBySchedule[slot.scheduleId]) {
-          slotsBySchedule[slot.scheduleId] = {
-            scheduleId: slot.scheduleId,
-            professionalName: slot.professionalName,
-            slots: []
-          };
-        }
-        slotsBySchedule[slot.scheduleId].slots.push(slot);
-      });
-      
-      let optionNumber = 0;
-      Object.values(slotsBySchedule).forEach(scheduleGroup => {
-        // Mostrar información de la agenda completa
-        if (scheduleGroup.slots.length > 0) {
-          const firstSlot = scheduleGroup.slots[0];
-          const lastSlot = scheduleGroup.slots[scheduleGroup.slots.length - 1];
-          
-          info += `\n📅 AGENDA_ID: ${scheduleGroup.scheduleId} - ${scheduleGroup.professionalName}\n`;
-          info += `   (Esta agenda tiene ${scheduleGroup.slots.length} slots libres de 30 minutos)\n\n`;
-        }
+      const slots = availabilityContext.freeSlots;
         
-        // Mostrar cada slot individual
-        scheduleGroup.slots.forEach(slot => {
-          optionNumber++;
-          const startTimeISO = slot.startTime.toISOString();
-          info += `- OPCION_${optionNumber}:\n`;
-          info += `  SCHEDULE_ID: ${slot.scheduleId}\n`;
-          info += `  START_TIME_ISO: ${startTimeISO}\n`;
-          info += `  FECHA_LEGIBLE: ${slot.dateHuman}\n`;
-          info += `  PROFESIONAL: ${slot.professionalName}\n`;
+        // Lógica para mostrar rango correcto (ej. si cierra a las 3pm, el último turno es 2:30pm)
+        if (slots.length > 0) {
+            const firstSlot = slots[0];
+            const lastSlot = slots[slots.length - 1];
+            info += `\nRESUMEN_AGENDA:\n`;
+            info += `  - PRIMER_TURNO_DISPONIBLE: ${firstSlot.dateHuman}\n`;
+            info += `  - ÚLTIMO_TURNO_DISPONIBLE: ${lastSlot.dateHuman}\n`; 
+            info += `  (Dile al usuario que tienes turnos desde ${firstSlot.dateHuman.split(',')[1]} hasta ${lastSlot.dateHuman.split(',')[1]})\n`;
+        }
+
+        info += `\nLISTA_COMPLETA_HORARIOS (Busca aquí si el usuario pide una hora específica):\n`;
+        
+        slots.forEach((slot, idx) => {
+          info += `- OPCION_${idx + 1}: [ID:${slot.scheduleId}] -> ${formatDateHumanWithoutTimezone(slot.startTime)}\n`;
         });
-      });
-      
-      info += "\n";
-      info += "⚠️ IMPORTANTE: Presenta los horarios al paciente mencionando primero el rango general de la agenda,\n";
-      info += "luego muestra máximo 3 slots específicos disponibles. Ejemplo:\n";
-      info += "\"El Dr. X tiene disponibilidad el [fecha] desde las [hora inicio] hasta las [hora fin].\n";
-      info += "Estos horarios están libres: 1) 9:00 AM, 2) 11:00 AM, 3) 2:00 PM\"\n\n";
-      info += "⚠️ Cuando el paciente elija una opción (diciendo '1', 'la primera', 'sí', 'esa', etc.),\n";
-      info += "debes llamar INMEDIATAMENTE a agendar_cita usando el SCHEDULE_ID y START_TIME_ISO de esa opción.\n\n";
+        
+        info += "\n⚠️ INSTRUCCIÓN: Si el usuario pide una hora (ej: 2pm) y no está en la lista exacta, ofrece la más cercana de la lista anterior (ej: 2:30pm).\n";
+        info += "⚠️ Cuando el paciente elija una opción, llama a agendar_cita inmediatamente.\n\n";
     } else {
-      // Si no detectamos especialidad, no forzamos un "0" (para evitar que el modelo diga "no hay" sin que se haya pedido algo).
+        // Si no detectamos especialidad, no forzamos un "0" (para evitar que el modelo diga "no hay" sin que se haya pedido algo).
       info += "HORARIOS_DISPONIBLES_COUNT: -1\n";
     }
 
@@ -846,18 +821,18 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
         };
       }
 
-      const requestedStartTime = new Date(startTime);
+      const requestedStartTime = getUTCDateFromSequelize(startTime);
       const SLOT_DURATION = 30; // minutos
       const requestedEndTime = new Date(requestedStartTime.getTime() + SLOT_DURATION * 60000);
 
       // 3. Verificar que el horario solicitado está dentro del rango del Schedule
-      const scheduleStart = new Date(schedule.startTime);
-      const scheduleEnd = new Date(schedule.endTime);
+      const scheduleStart = getUTCDateFromSequelize(schedule.startTime);
+      const scheduleEnd = getUTCDateFromSequelize(schedule.endTime);
 
       if (requestedStartTime < scheduleStart || requestedEndTime > scheduleEnd) {
         return {
           success: false,
-          message: `El horario solicitado (${requestedStartTime.toLocaleString('es-ES')}) está fuera del rango de la agenda (${scheduleStart.toLocaleString('es-ES')} - ${scheduleEnd.toLocaleString('es-ES')})`
+          message: `El horario solicitado (${formatDateWithoutTimezone(requestedStartTime)}) está fuera del rango de la agenda (${formatDateWithoutTimezone(scheduleStart)} - ${formatDateWithoutTimezone(scheduleEnd)})`
         };
       }
 
@@ -871,7 +846,7 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
       if (patientOverlap) {
         return {
           success: false,
-          message: `Ya tienes una cita programada en este horario: ${patientOverlap.startTime.toLocaleString('es-ES')} con ${patientOverlap.professionalName}`,
+          message: `Ya tienes una cita programada en este horario: ${formatDateWithoutTimezone(getUTCDateFromSequelize(patientOverlap.startTime))} con ${patientOverlap.professionalName}`,
           conflictingAppointment: {
             id: patientOverlap.id,
             startTime: patientOverlap.startTime,
@@ -965,15 +940,7 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
           professional: schedule.professional ?
             `${schedule.professional.names} ${schedule.professional.surNames}` : null,
           specialty: schedule.professional?.specialty || null,
-          dateHuman: requestedStartTime.toLocaleString('es-ES', {
-            weekday: 'long',
-            day: 'numeric',
-            month: 'long',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-            timeZone: 'America/Caracas'
-          })
+          dateHuman: formatDateHumanWithoutTimezone(requestedStartTime)
         }
       };
 
@@ -1172,14 +1139,7 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
           professional: appointment.professional ?
             `${appointment.professional.names} ${appointment.professional.surNames}` : null,
           specialty: appointment.professional?.specialty || null,
-          dateHuman: new Date(appointment.startTime).toLocaleString('es-ES', {
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-            timeZone: 'America/Caracas'
-          })
+          dateHuman: formatDateWithoutTimezone(getUTCDateFromSequelize(appointment.startTime))
         }
       };
 
@@ -1248,13 +1208,13 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
         };
       }
 
-      const requestedStartTime = new Date(newStartTime);
+      const requestedStartTime = getUTCDateFromSequelize(newStartTime);
       const SLOT_DURATION = 30; // minutos
       const requestedEndTime = new Date(requestedStartTime.getTime() + SLOT_DURATION * 60000);
 
       // 5. Verificar que el horario solicitado está dentro del rango del Schedule
-      const scheduleStart = new Date(newSchedule.startTime);
-      const scheduleEnd = new Date(newSchedule.endTime);
+      const scheduleStart = getUTCDateFromSequelize(newSchedule.startTime);
+      const scheduleEnd = getUTCDateFromSequelize(newSchedule.endTime);
 
       if (requestedStartTime < scheduleStart || requestedEndTime > scheduleEnd) {
         return {
@@ -1274,7 +1234,7 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
       if (patientOverlap) {
         return {
           success: false,
-          message: `Ya tienes una cita en este horario: ${patientOverlap.startTime.toLocaleString('es-ES')} con ${patientOverlap.professionalName}`
+          message: `Ya tienes una cita en este horario: ${formatDateWithoutTimezone(getUTCDateFromSequelize(patientOverlap.startTime))} con ${patientOverlap.professionalName}`
         };
       }
 
@@ -1345,8 +1305,8 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
         appointmentId: appointment.id,
         appointment: {
           id: appointment.id,
-          oldDateTime: oldStartTime.toLocaleString('es-ES'),
-          newDateTime: requestedStartTime.toLocaleString('es-ES'),
+          oldDateTime: formatDateWithoutTimezone(getUTCDateFromSequelize(oldStartTime)),
+          newDateTime: formatDateWithoutTimezone(requestedStartTime),
           professional: newSchedule.professional ?
             `${newSchedule.professional.names} ${newSchedule.professional.surNames}` : null,
           specialty: newSchedule.professional?.specialty || null
@@ -1419,7 +1379,7 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
         appointmentId: appointment.id,
         appointment: {
           id: appointment.id,
-          dateTime: appointment.startTime.toLocaleString('es-ES'),
+          dateTime: formatDateWithoutTimezone(getUTCDateFromSequelize(appointment.startTime)),
           professional: appointment.professional ?
             `${appointment.professional.names} ${appointment.professional.surNames}` : null
         }
@@ -1459,13 +1419,7 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
       appointments: appointments.map(apt => ({
         id: apt.id,
         date: apt.startTime,
-        dateHuman: new Date(apt.startTime).toLocaleDateString('es-ES', {
-          weekday: 'long',
-          day: 'numeric',
-          month: 'long',
-          hour: '2-digit',
-          minute: '2-digit'
-        }),
+          dateHuman: formatDateHumanWithoutTimezone(getUTCDateFromSequelize(apt.startTime)),
         professional: `${apt.professional.names} ${apt.professional.surNames}`,
         specialty: apt.professional.specialty
       }))
@@ -1531,7 +1485,7 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
       const mapped = appointments.map(apt => ({
         id: apt.id,
         date_iso: apt.startTime,
-        date_human: new Date(apt.startTime).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+        date_human: formatDateWithoutTimezone(getUTCDateFromSequelize(apt.startTime)),
         professional: apt.professional ? `${apt.professional.names} ${apt.professional.surNames}` : null,
         status: apt.status,
         reason: apt.description || null
@@ -1691,14 +1645,7 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
       const appointmentsData = appointments.map(apt => ({
         id: apt.id,
         date_iso: apt.startTime,
-        date_human: new Date(apt.startTime).toLocaleString('es-ES', {
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          timeZone: 'America/Caracas'
-        }),
+        date_human: formatDateWithoutTimezone(getUTCDateFromSequelize(apt.startTime)),
         professional: apt.professional ? `${apt.professional.names} ${apt.professional.surNames}` : null,
         specialty: apt.professional ? apt.professional.specialty : null,
         status: apt.status,
@@ -1741,6 +1688,66 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
       console.error(`[ChatIA _refreshUserContext] Error:`, error);
     }
   }
+}
+
+/**
+ * Obtiene un objeto Date con componentes UTC desde un objeto Date de Sequelize
+ * Crea una nueva fecha usando los componentes UTC como si fueran valores locales
+ * para evitar conversiones automáticas de timezone
+ * @param {Date|string} sequelizeDate - Fecha que viene de Sequelize
+ * @returns {Date} Nueva fecha con componentes UTC preservados
+ */
+function getUTCDateFromSequelize(sequelizeDate) {
+  if (!sequelizeDate) return null;
+  
+  // Si ya es un Date, usar sus componentes UTC directamente
+  const date = sequelizeDate instanceof Date ? sequelizeDate : new Date(sequelizeDate);
+  
+  // Crear una nueva fecha usando los componentes UTC como valores UTC
+  // Esto preserva la hora tal como está en la BD sin conversión
+  return new Date(Date.UTC(
+    date.getUTCFullYear(),
+    date.getUTCMonth(),
+    date.getUTCDate(),
+    date.getUTCHours(),
+    date.getUTCMinutes(),
+    date.getUTCSeconds(),
+    date.getUTCMilliseconds()
+  ));
+}
+
+/**
+ * Formatea una fecha sin conversión de timezone (usa la hora tal cual está en la BD)
+ * @param {Date} date - Fecha a formatear
+ * @returns {string} Fecha formateada en formato DD/MM/YYYY HH:mm
+ */
+function formatDateWithoutTimezone(date) {
+  if (!date) return '';
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  const hours = String(date.getUTCHours()).padStart(2, '0');
+  const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+  return `${day}/${month}/${year} ${hours}:${minutes}`;
+}
+
+/**
+ * Formatea una fecha de forma legible sin conversión de timezone
+ * @param {Date} date - Fecha a formatear
+ * @returns {string} Fecha formateada legible (ej: "lunes 15 de enero, 13:00")
+ */
+function formatDateHumanWithoutTimezone(date) {
+  if (!date) return '';
+  const weekdays = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+  const months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  
+  const weekday = weekdays[date.getUTCDay()];
+  const day = date.getUTCDate();
+  const month = months[date.getUTCMonth()];
+  const hours = String(date.getUTCHours()).padStart(2, '0');
+  const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+  
+  return `${weekday} ${day} de ${month}, ${hours}:${minutes}`;
 }
 
 module.exports = new ConversationalAssistantService();

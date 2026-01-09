@@ -178,7 +178,7 @@ class IAController {
       const mapped = appointments.map(apt => ({
         id: apt.id,
         date_iso: apt.startTime,
-        date_human: new Date(apt.startTime).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+        date_human: formatDateWithoutTimezone(getUTCDateFromSequelize(apt.startTime)),
         professional: apt.professional ? `${apt.professional.names} ${apt.professional.surNames}` : null,
         status: apt.status,
         reason: apt.description || null
@@ -294,19 +294,20 @@ class IAController {
           const SLOT_DURATION = 30; // minutos
 
           for (const schedule of schedules) {
-            let currentTime = new Date(schedule.startTime);
-            const endTime = new Date(schedule.endTime);
+            let currentTime = getUTCDateFromSequelize(schedule.startTime);
+            const endTime = getUTCDateFromSequelize(schedule.endTime);
             const prof = professionals.find(p => p.id === schedule.professionalId);
 
             // Generar slots de 30 minutos dentro del rango del schedule
-            while (currentTime < endTime) {
+            while (currentTime.getTime() < endTime.getTime()) {
               const slotEnd = new Date(currentTime.getTime() + SLOT_DURATION * 60000);
-              if (slotEnd > endTime) break;
+              if (slotEnd.getTime() > endTime.getTime()) break;
 
               // Verificar si este slot específico está ocupado
               const isTaken = takenAppointments.some(app => {
                 if (!app.startTime || app.professionalId !== schedule.professionalId) return false;
-                const appointmentTime = new Date(app.startTime);
+                const appointmentTime = getUTCDateFromSequelize(app.startTime);
+                if (!appointmentTime) return false;
                 return Math.abs(appointmentTime.getTime() - currentTime.getTime()) < 60000;
               });
 
@@ -318,9 +319,9 @@ class IAController {
                   startTime_iso: new Date(currentTime),
                   endTime_iso: endTime,
                   date_iso: new Date(currentTime),
-                  startTime_human: currentTime.toLocaleString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
-                  endTime_human: endTime.toLocaleString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
-                  date_human: currentTime.toLocaleString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+                  startTime_human: formatDateWithoutTimezone(new Date(currentTime)),
+                  endTime_human: formatDateWithoutTimezone(endTime),
+                  date_human: formatDateWithoutTimezone(new Date(currentTime))
                 });
               }
 
@@ -339,7 +340,7 @@ class IAController {
       const appointmentsData = appointments.map(apt => ({
         id: apt.id,
         date_iso: apt.startTime,
-        date_human: new Date(apt.startTime).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+        date_human: formatDateWithoutTimezone(getUTCDateFromSequelize(apt.startTime)),
         professional: apt.professional ? `${apt.professional.names} ${apt.professional.surNames}` : null,
         specialty: apt.professional ? apt.professional.specialty : null,
         status: apt.status,
@@ -410,6 +411,40 @@ class IAController {
       });
     }
   }
+}
+
+/**
+ * Obtiene un objeto Date con componentes UTC desde un objeto Date de Sequelize
+ * @param {Date|string} sequelizeDate - Fecha que viene de Sequelize
+ * @returns {Date} Nueva fecha con componentes UTC preservados
+ */
+function getUTCDateFromSequelize(sequelizeDate) {
+  if (!sequelizeDate) return null;
+  const date = sequelizeDate instanceof Date ? sequelizeDate : new Date(sequelizeDate);
+  return new Date(Date.UTC(
+    date.getUTCFullYear(),
+    date.getUTCMonth(),
+    date.getUTCDate(),
+    date.getUTCHours(),
+    date.getUTCMinutes(),
+    date.getUTCSeconds(),
+    date.getUTCMilliseconds()
+  ));
+}
+
+/**
+ * Formatea una fecha sin conversión de timezone (usa la hora tal cual está en la BD)
+ * @param {Date} date - Fecha a formatear
+ * @returns {string} Fecha formateada en formato DD/MM/YYYY HH:mm
+ */
+function formatDateWithoutTimezone(date) {
+  if (!date) return '';
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  const hours = String(date.getUTCHours()).padStart(2, '0');
+  const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+  return `${day}/${month}/${year} ${hours}:${minutes}`;
 }
 
 module.exports = new IAController();

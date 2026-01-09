@@ -69,14 +69,7 @@ async function initializeIAContext(userId, patientId) {
     const appointmentsData = appointments.map(apt => ({
       id: apt.id,
       date_iso: apt.startTime,
-      date_human: new Date(apt.startTime).toLocaleString('es-ES', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        timeZone: 'America/Caracas'
-      }),
+      date_human: formatDateWithoutTimezone(getUTCDateFromSequelize(apt.startTime)),
       professional: apt.professional ? `${apt.professional.names} ${apt.professional.surNames}` : null,
       specialty: apt.professional ? apt.professional.specialty : null,
       status: apt.status,
@@ -166,7 +159,9 @@ async function getAvailabilityBySpecialty() {
 
       console.log(`[IAContextService] Schedules encontrados para ${specialty}: ${schedules.length}`);
       schedules.forEach((s, idx) => {
-        const duration = (new Date(s.endTime) - new Date(s.startTime)) / (1000 * 60 * 60);
+        const startUTC = getUTCDateFromSequelize(s.startTime);
+        const endUTC = getUTCDateFromSequelize(s.endTime);
+        const duration = (endUTC.getTime() - startUTC.getTime()) / (1000 * 60 * 60);
         console.log(`  Schedule ${idx + 1}: ID=${s.id}, Start=${s.startTime}, End=${s.endTime}, Duración=${duration.toFixed(2)}h, Prof=${s.professionalId}`);
       });
 
@@ -186,24 +181,25 @@ async function getAvailabilityBySpecialty() {
       const SLOT_DURATION = 30; // minutos
 
       for (const schedule of schedules) {
-        let currentTime = new Date(schedule.startTime);
-        const endTime = new Date(schedule.endTime);
+        // Trabajar directamente con el objeto Date de Sequelize usando componentes UTC
+        let currentTime = getUTCDateFromSequelize(schedule.startTime);
+        const endTime = getUTCDateFromSequelize(schedule.endTime);
         const prof = professionals.find(p => p.id === schedule.professionalId);
 
         console.log(`[IAContextService] Generando slots para Schedule ID ${schedule.id}:`);
-        console.log(`  - Rango: ${currentTime.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Caracas' })} hasta ${endTime.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Caracas' })}`);
+        console.log(`  - Rango original BD: ${schedule.startTime} (UTC: ${formatTimeWithoutTimezone(currentTime)}) hasta ${schedule.endTime} (UTC: ${formatTimeWithoutTimezone(endTime)})`);
 
         let slotsGenerated = 0;
         
         // Generar slots de 30 minutos dentro del rango del schedule
-        while (currentTime < endTime) {
+        while (currentTime.getTime() < endTime.getTime()) {
           const slotEnd = new Date(currentTime.getTime() + SLOT_DURATION * 60000);
-          if (slotEnd > endTime) break;
+          if (slotEnd.getTime() > endTime.getTime()) break;
 
           // Verificar si este slot específico está ocupado
           const isTaken = takenAppointments.some(app => {
             if (!app.startTime || app.professionalId !== schedule.professionalId) return false;
-            const appointmentTime = new Date(app.startTime);
+            const appointmentTime = getUTCDateFromSequelize(app.startTime);
             return Math.abs(appointmentTime.getTime() - currentTime.getTime()) < 60000; // Dentro de 1 minuto
           });
 
@@ -212,33 +208,12 @@ async function getAvailabilityBySpecialty() {
               scheduleId: schedule.id,
               professionalId: schedule.professionalId,
               professional: prof ? `${prof.names} ${prof.surNames}` : null,
-              startTime_iso: new Date(currentTime),
-              endTime_iso: schedule.endTime,
-              date_iso: new Date(currentTime),
-              startTime_human: currentTime.toLocaleString('es-ES', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-                timeZone: 'America/Caracas'
-              }),
-              endTime_human: endTime.toLocaleString('es-ES', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-                timeZone: 'America/Caracas'
-              }),
-              date_human: currentTime.toLocaleString('es-ES', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric',
-                hour: '2-digit',
-                minute: '2-digit',
-                timeZone: 'America/Caracas'
-              })
+              startTime_iso: currentTime,
+              endTime_iso: endTime,
+              date_iso: currentTime,
+              startTime_human: formatDateWithoutTimezone(currentTime),
+              endTime_human: formatDateWithoutTimezone(endTime),
+              date_human: formatDateWithoutTimezone(currentTime)
             });
             slotsGenerated++;
           }
@@ -259,6 +234,59 @@ async function getAvailabilityBySpecialty() {
   }
 
   return availability;
+}
+
+/**
+ * Obtiene un objeto Date con componentes UTC desde un objeto Date de Sequelize
+ * Crea una nueva fecha usando los componentes UTC como si fueran valores locales
+ * para evitar conversiones automáticas de timezone
+ * @param {Date|string} sequelizeDate - Fecha que viene de Sequelize
+ * @returns {Date} Nueva fecha con componentes UTC preservados
+ */
+function getUTCDateFromSequelize(sequelizeDate) {
+  if (!sequelizeDate) return null;
+  
+  // Si ya es un Date, usar sus componentes UTC directamente
+  const date = sequelizeDate instanceof Date ? sequelizeDate : new Date(sequelizeDate);
+  
+  // Crear una nueva fecha usando los componentes UTC como valores UTC
+  // Esto preserva la hora tal como está en la BD sin conversión
+  return new Date(Date.UTC(
+    date.getUTCFullYear(),
+    date.getUTCMonth(),
+    date.getUTCDate(),
+    date.getUTCHours(),
+    date.getUTCMinutes(),
+    date.getUTCSeconds(),
+    date.getUTCMilliseconds()
+  ));
+}
+
+/**
+ * Formatea una fecha sin conversión de timezone (usa la hora tal cual está en la BD)
+ * @param {Date} date - Fecha a formatear
+ * @returns {string} Fecha formateada en formato DD/MM/YYYY HH:mm
+ */
+function formatDateWithoutTimezone(date) {
+  if (!date) return '';
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
+  const hours = String(date.getUTCHours()).padStart(2, '0');
+  const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+  return `${day}/${month}/${year} ${hours}:${minutes}`;
+}
+
+/**
+ * Formatea una hora sin conversión de timezone
+ * @param {Date} date - Fecha a formatear
+ * @returns {string} Hora formateada en formato HH:mm
+ */
+function formatTimeWithoutTimezone(date) {
+  if (!date) return '';
+  const hours = String(date.getUTCHours()).padStart(2, '0');
+  const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+  return `${hours}:${minutes}`;
 }
 
 module.exports = {

@@ -42,10 +42,9 @@ class SmartSchedulingService {
       }
 
       const slotsString = availableSlots.map(slot => {
-        const date = new Date(slot.startTime);
-        const dateStr = date.toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-        const timeStr = date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
-        return `- ID: ${slot.id} | Fecha: ${dateStr} | Hora: ${timeStr} (ISO: ${slot.startTime.toISOString()})`;
+        const date = getUTCDateFromSequelize(slot.startTime);
+        const dateStr = formatDateHumanWithoutTimezone(date);
+        return `- ID: ${slot.id} | Fecha: ${dateStr} (ISO: ${date ? date.toISOString() : 'N/A'})`;
       }).join('\n');
 
       console.log("📅 Horarios enviados a Gemini:\n", slotsString);
@@ -88,6 +87,45 @@ class SmartSchedulingService {
       throw error;
     }
   }
+}
+
+/**
+ * Obtiene un objeto Date con componentes UTC desde un objeto Date de Sequelize
+ * @param {Date|string} sequelizeDate - Fecha que viene de Sequelize
+ * @returns {Date} Nueva fecha con componentes UTC preservados
+ */
+function getUTCDateFromSequelize(sequelizeDate) {
+  if (!sequelizeDate) return null;
+  const date = sequelizeDate instanceof Date ? sequelizeDate : new Date(sequelizeDate);
+  return new Date(Date.UTC(
+    date.getUTCFullYear(),
+    date.getUTCMonth(),
+    date.getUTCDate(),
+    date.getUTCHours(),
+    date.getUTCMinutes(),
+    date.getUTCSeconds(),
+    date.getUTCMilliseconds()
+  ));
+}
+
+/**
+ * Formatea una fecha de forma legible sin conversión de timezone
+ * @param {Date} date - Fecha a formatear
+ * @returns {string} Fecha formateada legible (ej: "lunes 15 de enero 2024, 13:00")
+ */
+function formatDateHumanWithoutTimezone(date) {
+  if (!date) return '';
+  const weekdays = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+  const months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  
+  const weekday = weekdays[date.getUTCDay()];
+  const day = date.getUTCDate();
+  const month = months[date.getUTCMonth()];
+  const year = date.getUTCFullYear();
+  const hours = String(date.getUTCHours()).padStart(2, '0');
+  const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+  
+  return `${weekday} ${day} de ${month} ${year}, ${hours}:${minutes}`;
 }
 
 module.exports = new SmartSchedulingService();
