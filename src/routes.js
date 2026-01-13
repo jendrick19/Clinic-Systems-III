@@ -31,4 +31,8 @@ router.use('/api/bussines', bussinesModule);
 router.use('/api/platform', platformModule);
 router.use('/api/intelligence', intelligenceModule);
 
+// Rutas del módulo de dashboard
+const dashboardRoutes = require('./modules/dashboard/routes');
+router.use('/api/dashboard', dashboardRoutes);
+
 module.exports = router;

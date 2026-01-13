@@ -148,12 +148,43 @@
           </button>
         </div>
       </div>
+
+      <!-- Próximas Citas Detalladas -->
+      <div v-if="upcomingAppointments.length > 0" class="mt-8 bg-white rounded-xl shadow-md p-6 border border-cyan-100">
+        <h3 class="text-lg font-semibold text-slate-900 mb-4">Próximas Citas</h3>
+        <div class="space-y-3">
+          <div 
+            v-for="apt in upcomingAppointments" 
+            :key="apt.id"
+            class="flex items-center justify-between p-4 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors"
+          >
+            <div class="flex items-center gap-4">
+              <div class="w-12 h-12 bg-cyan-100 rounded-full flex items-center justify-center">
+                <svg class="w-6 h-6 text-cyan-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+              </div>
+              <div>
+                <p class="font-semibold text-slate-900">{{ apt.paciente }}</p>
+                <p class="text-sm text-slate-500">{{ apt.fecha }} - {{ apt.hora }}</p>
+              </div>
+            </div>
+            <span 
+              class="px-3 py-1 text-xs font-medium rounded-full"
+              :class="apt.estado === 'confirmada' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'"
+            >
+              {{ apt.estado === 'confirmada' ? 'Confirmada' : 'Solicitada' }}
+            </span>
+          </div>
+        </div>
+      </div>
     </main>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
+import { eventBus, EVENTS } from '../utils/eventBus'
 
 const emit = defineEmits(['logout'])
 
@@ -163,6 +194,7 @@ const stats = ref({
   pacientes: 0,
   proximasCitas: 0,
 })
+const upcomingAppointments = ref([])
 
 onMounted(() => {
   // Cargar datos del usuario desde localStorage
@@ -173,15 +205,65 @@ onMounted(() => {
   
   // Aquí puedes cargar estadísticas desde la API
   loadStats()
+  
+  // Escuchar eventos de actualización
+  eventBus.on(EVENTS.REFRESH_DASHBOARD, () => {
+    console.log('[Dashboard Admin] Recibido evento de actualización, recargando...')
+    loadStats()
+  })
+})
+
+onUnmounted(() => {
+  // Limpiar listeners al desmontar
+  eventBus.off(EVENTS.REFRESH_DASHBOARD)
 })
 
 const loadStats = async () => {
-  // TODO: Implementar carga de estadísticas desde la API
-  // Por ahora, valores por defecto
-  stats.value = {
-    citasHoy: 0,
-    pacientes: 0,
-    proximasCitas: 0,
+  try {
+    const user = localStorage.getItem('user')
+    if (!user) {
+      console.warn('[Dashboard Admin] No hay usuario en localStorage')
+      return
+    }
+    
+    const userDataParsed = JSON.parse(user)
+    const userId = userDataParsed?.data?.userId
+    const entityId = userDataParsed?.data?.id || userDataParsed?.id
+    
+    console.log('[Dashboard Admin] Cargando estadísticas...')
+    console.log('[Dashboard Admin] userId:', userId)
+    console.log('[Dashboard Admin] entityId:', entityId)
+    console.log('[Dashboard Admin] userData completo:', userDataParsed)
+    
+    if (!userId && !entityId) {
+      console.warn('[Dashboard Admin] No se pudo obtener userId o entityId')
+      return
+    }
+    
+    const url = `/api/dashboard/stats?userId=${userId}&entityId=${entityId}`
+    console.log('[Dashboard Admin] Llamando a:', url)
+    
+    const response = await fetch(url)
+    const data = await response.json()
+    
+    console.log('[Dashboard Admin] Respuesta del servidor:', data)
+    
+    if (data.success && data.data) {
+      console.log('[Dashboard Admin] Datos recibidos:', data.data)
+      stats.value = {
+        citasHoy: data.data.citasHoy || 0,
+        pacientes: data.data.pacientesActivos || 0,
+        proximasCitas: data.data.proximasCitas || 0
+      }
+      upcomingAppointments.value = data.data.upcomingAppointments || []
+      console.log('[Dashboard Admin] Estadísticas actualizadas:', stats.value)
+      console.log('[Dashboard Admin] Próximas citas cargadas:', upcomingAppointments.value.length)
+    } else {
+      console.error('[Dashboard Admin] Error en respuesta:', data)
+    }
+  } catch (error) {
+    console.error('[Dashboard Admin] Error:', error)
+    stats.value = { citasHoy: 0, pacientes: 0, proximasCitas: 0 }
   }
 }
 

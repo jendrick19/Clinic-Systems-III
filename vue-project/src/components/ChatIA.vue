@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted, nextTick } from 'vue'
+import { eventBus, EVENTS } from '../utils/eventBus'
 
 const messages = ref([
   { 
@@ -32,13 +33,21 @@ const getUserFromStorage = () => {
         if (dataStr) {
           try {
             const userData = JSON.parse(dataStr)
-            // CORRECCIÓN: Priorizar userData.id (peopleId) sobre userData.data.userId
-            // Estructura: { id: 62, data: { id: 62, userId: 2, ... } }
-            // Queremos el 62, NO el 2
-            const extractedId = userData?.id || userData?.data?.id || null
-            if (extractedId) {
-              console.log(`[ChatIA] peopleId extraído de ${name}.${key}:`, extractedId, '(estructura completa:', userData, ')')
-              return Number(extractedId)
+            // CORRECCIÓN CRÍTICA: Usar userData.data.userId (ID del usuario logueado)
+            // NO usar userData.id o userData.data.id (que es el entityId/peopleId/professionalId)
+            // Estructura: { id: 3, data: { userId: 5, id: 3, ... } }
+            // userId=5 es el ID del usuario en la tabla Users
+            // id=3 es el ID en PeopleAttended o Professional
+            const extractedUserId = userData?.data?.userId || null
+            const extractedEntityId = userData?.data?.id || userData?.id || null
+            
+            if (extractedUserId) {
+              console.log(`[ChatIA] userId extraído de ${name}.${key}:`, extractedUserId, '| entityId:', extractedEntityId)
+              console.log('[ChatIA] Estructura completa:', userData)
+              // Guardamos ambos IDs en variables globales
+              window.__EXTRACTED_USER_ID__ = extractedUserId
+              window.__EXTRACTED_ENTITY_ID__ = extractedEntityId
+              return { userId: Number(extractedUserId), entityId: Number(extractedEntityId) }
             }
           } catch (e) {
             // No es JSON válido, continuar
@@ -49,7 +58,7 @@ const getUserFromStorage = () => {
       const simpleUserId = storage.getItem('userId')
       if (simpleUserId) {
         console.log(`[ChatIA] userId simple desde ${name}:`, simpleUserId)
-        return Number(simpleUserId)
+        return { userId: Number(simpleUserId), entityId: Number(simpleUserId) }
       }
     }
   } catch (e) {
@@ -58,8 +67,10 @@ const getUserFromStorage = () => {
   return null
 }
 
-const userId = ref(getUserFromStorage() || (window.__USER_ID__ ? Number(window.__USER_ID__) : null))
-const patientId = ref(getUserFromStorage() || (window.__PATIENT_ID__ ? Number(window.__PATIENT_ID__) : null))
+
+const userIds = getUserFromStorage() || { userId: null, entityId: null }
+const userId = ref(userIds.userId || (window.__USER_ID__ ? Number(window.__USER_ID__) : null))
+const patientId = ref(userIds.entityId || (window.__PATIENT_ID__ ? Number(window.__PATIENT_ID__) : null))
 const sessionContext = ref(null)
 
 const scrollToBottom = async () => {
@@ -187,6 +198,12 @@ const sendMessage = async () => {
       const assistantPayload = result.data;
       const assistantMessage = assistantPayload.message || 'Lo siento, no entendí. ¿Puedes repetirlo?';
       messages.value.push({ role: 'assistant', content: assistantMessage })
+      
+      // Emitir evento si hubo cambios en las citas (usando flag del backend)
+      if (assistantPayload.appointmentChanged === true) {
+        console.log('[ChatIA] Cambio en citas detectado, emitiendo evento REFRESH_DASHBOARD')
+        eventBus.emit(EVENTS.REFRESH_DASHBOARD)
+      }
     } else {
       messages.value.push({ role: 'assistant', content: getErrorMessage(result.message || 'Error desconocido') })
     }
@@ -217,7 +234,8 @@ const setManualUserId = () => {
     })
     scrollToBottom()
     
-    // Intentar inicializar sesión
+    // NOTA: No llamamos a init-session porque sobrescribe el contexto del login
+    /* DESHABILITADO
     fetch('/api/intelligence/init-session', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -231,21 +249,26 @@ const setManualUserId = () => {
         }
       })
       .catch(err => console.error('Error inicializando sesión:', err))
+    */
   }
 }
 
 onMounted(async () => {
   // Verificar nuevamente el userId al montar (por si se actualizó localStorage después de cargar)
-  const freshUserId = getUserFromStorage()
-  if (freshUserId && !userId.value) {
-    userId.value = freshUserId
-    patientId.value = freshUserId
-    console.log('[ChatIA onMounted] userId actualizado:', freshUserId)
+  const freshUserIds = getUserFromStorage()
+  if (freshUserIds && !userId.value) {
+    userId.value = freshUserIds.userId
+    patientId.value = freshUserIds.entityId
+    console.log('[ChatIA onMounted] userId actualizado:', freshUserIds.userId, '| entityId:', freshUserIds.entityId)
   }
   
   console.log('[ChatIA onMounted] userId:', userId.value, 'patientId:', patientId.value)
   
-  // Intentar inicializar sesión y precargar contexto
+  // NOTA: NO llamamos a init-session aquí porque el contexto ya se inicializa
+  // automáticamente en el AuthController durante el login.
+  // Llamar a init-session aquí sobrescribe el contexto correcto del profesional.
+  
+  /* DESHABILITADO - El contexto se inicializa en el login
   if (userId.value || patientId.value) {
     try {
       const resp = await fetch('/api/intelligence/init-session', {
@@ -270,6 +293,10 @@ onMounted(async () => {
       console.error('init-session error', err)
     }
   }
+  */
+  
+  console.log('[ChatIA] Contexto ya inicializado en el login. No se llama a init-session.')
+  
   // Si hay userId obtenido desde window.__USER_ID__, guardarlo en localStorage para futuras sesiones
   if (window.__USER_ID__ && !localStorage.getItem('userId')) {
     try {

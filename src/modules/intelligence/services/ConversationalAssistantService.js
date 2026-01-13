@@ -62,9 +62,23 @@ class ConversationalAssistantService {
       // Si existe contexto inicial precargado, usarlo EXCLUSIVAMENTE (no hacer consultas)
       if (convoState.initialContext) {
         console.log('[ChatIA] Usando contexto precargado para usuario', userId);
+
+        // Determinar rol del usuario
+        const isProfessional = convoState.initialContext.role === 'professional';
+
+        console.log('[ChatIA DEBUG] ===== VERIFICACIÓN DE ROL =====');
+        console.log('[ChatIA DEBUG] convoState.initialContext.role:', convoState.initialContext.role);
+        console.log('[ChatIA DEBUG] isProfessional:', isProfessional);
+        console.log('[ChatIA DEBUG] userData:', convoState.initialContext.userData);
+        console.log('[ChatIA DEBUG] ================================');
+
         userContext = {
-          patient: convoState.initialContext.patient,
-          appointments: convoState.initialContext.appointments || []
+          role: convoState.initialContext.role || 'patient',
+          isProfessional: isProfessional,
+          userData: convoState.initialContext.userData, // Profesional o Paciente
+          patient: convoState.initialContext.patient, // Solo si es paciente
+          appointments: convoState.initialContext.appointments || [],
+          schedules: convoState.initialContext.schedules || []
         };
 
         // Guardar la disponibilidad completa para incluirla en el contexto
@@ -115,44 +129,50 @@ class ConversationalAssistantService {
       // El modelo de IA manejará estas conversaciones de forma natural.
 
       // 5. Construir mensajes para OpenAI
+      // Determinar qué prompt usar según el rol
+      let activePrompt = this.systemPrompt; // Prompt de paciente por defecto
+
+      if (userContext.isProfessional) {
+        // Cargar prompt específico para profesionales
+        const professionalPromptPath = path.join(__dirname, '../prompts/PromptProfesional.md');
+        console.log('[ChatIA DEBUG] Intentando cargar prompt profesional desde:', professionalPromptPath);
+        console.log('[ChatIA DEBUG] Archivo existe?:', fs.existsSync(professionalPromptPath));
+        if (fs.existsSync(professionalPromptPath)) {
+          activePrompt = fs.readFileSync(professionalPromptPath, 'utf-8');
+          console.log('[ChatIA] ✅ Usando prompt de PROFESIONAL');
+          console.log('[ChatIA DEBUG] Primeras 200 caracteres del prompt:', activePrompt.substring(0, 200));
+        } else {
+          console.log('[ChatIA ERROR] ❌ No se encontró el archivo PromptProfesional.md');
+        }
+      } else {
+        console.log('[ChatIA] Usando prompt de PACIENTE (María)');
+      }
+
       const strictAvailabilityRules = `
 REGLAS ESTRICTAS (MUY IMPORTANTE):
 - SOLO usa la información del CONTEXTO ACTUAL que se te proporciona abajo.
 - NO inventes disponibilidad ni citas que no estén en el contexto.
-- Si CITAS_ACTIVAS_COUNT > 0, el paciente SÍ tiene citas. Muéstralas exactamente como aparecen.
-- Si CITAS_ACTIVAS_COUNT = 0, el paciente NO tiene citas activas.
+- Si CITAS_ACTIVAS_COUNT > 0, ${userContext.isProfessional ? 'el doctor' : 'el paciente'} SÍ tiene citas. Muéstralas exactamente como aparecen.
+- Si CITAS_ACTIVAS_COUNT = 0, ${userContext.isProfessional ? 'el doctor' : 'el paciente'} NO tiene citas activas.
+- El CONTEXTO ACTUAL ya contiene TODA la información. NO necesitas hacer consultas adicionales.
+${userContext.isProfessional ? `
+- Eres el ASISTENTE PERSONAL del doctor, no María la secretaria.
+- Usa un tono profesional, ejecutivo y directo.
+- Al saludar, di: "Hola Dr. [nombre del DOCTOR_NOMBRE], ¿necesita revisar su agenda?"
+- NO inventes nombres, usa EXACTAMENTE el nombre que aparece en DOCTOR_NOMBRE.
+` : `
 - Si en el contexto aparece HORARIOS_DISPONIBLES_COUNT mayor que 0, entonces SÍ hay disponibilidad.
   En ese caso, está PROHIBIDO decir "no hay horarios" o frases equivalentes.
 - Si HORARIOS_DISPONIBLES_COUNT es 0 (y el usuario pidió una especialidad), entonces di que no hay para esa especialidad
   y ofrece alternativas (otra fecha/otro doctor/otra especialidad).
 - Recomienda MÁXIMO 3 horarios y SOLO los que aparecen listados en HORARIOS_DISPONIBLES.
-- El CONTEXTO ACTUAL ya contiene TODA la información del paciente. NO necesitas hacer consultas adicionales.
-
-- El "ÚLTIMO TURNO DISPONIBLE" indicado en el contexto es la hora de inicio de la última cita posible. Usa esa hora para decirle al usuario hasta cuándo atiendes.
-   - **BÚSQUEDA INTELIGENTE**: Si el usuario pide una hora específica (ej: "2 pm") y esa hora NO aparece exacta en la lista de opciones:
-     - NO muestres los primeros horarios de la mañana por defecto.
-     - BUSCA en la lista "LISTA_COMPLETA_HORARIOS" los horarios más cercanos (anteriores y posteriores) a la hora pedida.
-     - Ejemplo: "A las 2:00 pm está ocupado, pero tengo libre a las 1:30 pm o 2:30 pm".
-
-- Si el usuario dice "mejor a las X", "cámbiala a las Y" o "no, prefiero a las Z":
-   - Trátalo como una instrucción inmediata de cambio.
-   - Busca la nueva hora en la lista disponible.
-   - Si ya se creó una cita, usa la función 'reagendar_cita'. Si no, usa 'agendar_cita'.
-
-🔴 REGLA CRÍTICA - AGENDAR CITAS:
-Cuando el paciente confirma que quiere una de las opciones que mostraste (diciendo "sí", "la primera", "esa", "ok", "la 2", etc.),
-debes INMEDIATAMENTE llamar a la función agendar_cita usando:
-  - scheduleId: el SCHEDULE_ID de la opción elegida (está en el contexto que acabas de ver)
-  - startTime: el START_TIME_ISO de esa opción (está en el contexto)
-  - reason: la especialidad o motivo
-NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirmó. EJECUTA la función agendar_cita.
-
+`}
 `;
 
       const messages = [
         {
           role: "system",
-          content: `${this.systemPrompt}\n\n${strictAvailabilityRules}\n\nCONTEXTO ACTUAL (DATOS REALES):\n${contextualInfo}`
+          content: `${activePrompt}\n\n${strictAvailabilityRules}\n\nCONTEXTO ACTUAL (DATOS REALES):\n${contextualInfo}`
         },
         ...conversationHistory,
         { role: "user", content: userMessage }
@@ -261,7 +281,8 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
         message: finalMessage,
         action: assistantMessage.function_call?.name || null,
         actionResult: actionResult,
-        requiresConfirmation: this._requiresConfirmation(assistantMessage.function_call?.name)
+        requiresConfirmation: this._requiresConfirmation(assistantMessage.function_call?.name),
+        appointmentChanged: ['agendar_cita', 'cancelar_cita', 'reagendar_cita'].includes(assistantMessage.function_call?.name) && actionResult?.success
       };
 
     } catch (error) {
@@ -468,7 +489,7 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
       console.log(`  - Professional ID: ${schedule.professionalId}`);
       console.log(`  - Start Time original BD: ${schedule.startTime} -> UTC: ${formatDateWithoutTimezone(currentTime)}`);
       console.log(`  - End Time original BD: ${schedule.endTime} -> UTC: ${formatDateWithoutTimezone(endTime)}`);
-      
+
       const diffHours = (endTime.getTime() - currentTime.getTime()) / (1000 * 60 * 60);
       console.log(`  - Duración total: ${diffHours.toFixed(2)} horas`);
       console.log(`  - Slots posibles: ${Math.floor(diffHours * 2)}`);
@@ -522,8 +543,14 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
   _buildContextualInfo(userContext, availabilityContext, fullAvailability = null, lastShownOptions = null) {
     let info = "";
 
-    // Información del paciente
-    if (userContext.patient) {
+    // Información del usuario según su rol
+    if (userContext.isProfessional && userContext.userData) {
+      // === CONTEXTO PARA PROFESIONAL ===
+      info += `ROL_USUARIO: PROFESIONAL (DOCTOR)\n`;
+      info += `DOCTOR_NOMBRE: ${userContext.userData.names} ${userContext.userData.surNames}\n`;
+      info += `DOCTOR_ID: ${userContext.userData.id}\n\n`;
+    } else if (userContext.patient) {
+      // === CONTEXTO PARA PACIENTE ===
       info += `PACIENTE_NOMBRE: ${userContext.patient.names} ${userContext.patient.surNames}\n`;
       info += `PACIENTE_ID: ${userContext.patient.id}\n\n`;
     }
@@ -531,7 +558,13 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
     // Citas existentes
     if (userContext.appointments && userContext.appointments.length > 0) {
       info += `CITAS_ACTIVAS_COUNT: ${userContext.appointments.length}\n`;
-      info += `CITAS_ACTIVAS:\n`;
+
+      if (userContext.isProfessional) {
+        info += `TU AGENDA (CITAS CON PACIENTES):\n`;
+      } else {
+        info += `CITAS_ACTIVAS:\n`;
+      }
+
       userContext.appointments.forEach((apt, idx) => {
         // Manejar tanto appointments de BD (con professional object) como del contexto precargado (con strings)
         let dateStr = '';
@@ -542,10 +575,16 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
           dateStr = formatDateHumanWithoutTimezone(date);
         }
 
-        const professionalName = apt.professional || (apt.professional?.names && apt.professional?.surNames ? `${apt.professional.names} ${apt.professional.surNames}` : 'No especificado');
-        const specialty = apt.specialty || apt.professional?.specialty || 'No especificada';
-
-        info += `- CITA_${idx + 1}: ID=${apt.id} | ${dateStr} | ${professionalName} | ESPECIALIDAD=${specialty}\n`;
+        if (userContext.isProfessional) {
+          // Para profesional: mostrar nombre del paciente
+          const patientName = apt.patientName || 'Paciente';
+          info += `- CITA_${idx + 1}: ID=${apt.id} | ${dateStr} | PACIENTE: ${patientName} | ESTADO: ${apt.status}\n`;
+        } else {
+          // Para paciente: mostrar nombre del doctor
+          const professionalName = apt.professional || (apt.professional?.names && apt.professional?.surNames ? `${apt.professional.names} ${apt.professional.surNames}` : 'No especificado');
+          const specialty = apt.specialty || apt.professional?.specialty || 'No especificada';
+          info += `- CITA_${idx + 1}: ID=${apt.id} | ${dateStr} | ${professionalName} | ESPECIALIDAD=${specialty}\n`;
+        }
       });
       info += "\n";
     } else {
@@ -557,27 +596,27 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
       info += `ESPECIALIDAD_DETECTADA: ${availabilityContext.specialty}\n`;
       info += `HORARIOS_DISPONIBLES_COUNT: ${availabilityContext.freeSlots.length}\n`;
       const slots = availabilityContext.freeSlots;
-        
-        // Lógica para mostrar rango correcto (ej. si cierra a las 3pm, el último turno es 2:30pm)
-        if (slots.length > 0) {
-            const firstSlot = slots[0];
-            const lastSlot = slots[slots.length - 1];
-            info += `\nRESUMEN_AGENDA:\n`;
-            info += `  - PRIMER_TURNO_DISPONIBLE: ${firstSlot.dateHuman}\n`;
-            info += `  - ÚLTIMO_TURNO_DISPONIBLE: ${lastSlot.dateHuman}\n`; 
-            info += `  (Dile al usuario que tienes turnos desde ${firstSlot.dateHuman.split(',')[1]} hasta ${lastSlot.dateHuman.split(',')[1]})\n`;
-        }
 
-        info += `\nLISTA_COMPLETA_HORARIOS (Busca aquí si el usuario pide una hora específica):\n`;
-        
-        slots.forEach((slot, idx) => {
-          info += `- OPCION_${idx + 1}: [ID:${slot.scheduleId}] -> ${formatDateHumanWithoutTimezone(slot.startTime)}\n`;
-        });
-        
-        info += "\n⚠️ INSTRUCCIÓN: Si el usuario pide una hora (ej: 2pm) y no está en la lista exacta, ofrece la más cercana de la lista anterior (ej: 2:30pm).\n";
-        info += "⚠️ Cuando el paciente elija una opción, llama a agendar_cita inmediatamente.\n\n";
+      // Lógica para mostrar rango correcto (ej. si cierra a las 3pm, el último turno es 2:30pm)
+      if (slots.length > 0) {
+        const firstSlot = slots[0];
+        const lastSlot = slots[slots.length - 1];
+        info += `\nRESUMEN_AGENDA:\n`;
+        info += `  - PRIMER_TURNO_DISPONIBLE: ${firstSlot.dateHuman}\n`;
+        info += `  - ÚLTIMO_TURNO_DISPONIBLE: ${lastSlot.dateHuman}\n`;
+        info += `  (Dile al usuario que tienes turnos desde ${firstSlot.dateHuman.split(',')[1]} hasta ${lastSlot.dateHuman.split(',')[1]})\n`;
+      }
+
+      info += `\nLISTA_COMPLETA_HORARIOS (Busca aquí si el usuario pide una hora específica):\n`;
+
+      slots.forEach((slot, idx) => {
+        info += `- OPCION_${idx + 1}: [ID:${slot.scheduleId}] -> ${formatDateHumanWithoutTimezone(slot.startTime)}\n`;
+      });
+
+      info += "\n⚠️ INSTRUCCIÓN: Si el usuario pide una hora (ej: 2pm) y no está en la lista exacta, ofrece la más cercana de la lista anterior (ej: 2:30pm).\n";
+      info += "⚠️ Cuando el paciente elija una opción, llama a agendar_cita inmediatamente.\n\n";
     } else {
-        // Si no detectamos especialidad, no forzamos un "0" (para evitar que el modelo diga "no hay" sin que se haya pedido algo).
+      // Si no detectamos especialidad, no forzamos un "0" (para evitar que el modelo diga "no hay" sin que se haya pedido algo).
       info += "HORARIOS_DISPONIBLES_COUNT: -1\n";
     }
 
@@ -708,8 +747,15 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
           type: "object",
           properties: {}
         }
-      }
-      ,
+      },
+      {
+        name: "consultar_mi_agenda",
+        description: "Consulta la agenda del doctor (sus citas con pacientes). SOLO usar si el usuario es un PROFESIONAL/DOCTOR.",
+        parameters: {
+          type: "object",
+          properties: {}
+        }
+      },
       {
         name: "consultar_citas_por_documento",
         description: "Busca citas activas de un paciente a partir de tipo/numero de documento y nombre/apellido",
@@ -764,6 +810,9 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
 
         case "consultar_citas":
           return await this._consultarCitas(patientId);
+
+        case "consultar_mi_agenda":
+          return await this._consultarAgendaDoctor(patientId);
 
         case "consultar_citas_por_documento":
           return await this._consultarCitasPorDocumento(args);
@@ -1325,16 +1374,14 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
 
   /**
    * Cancela una cita con registro en historial
+   * Funciona tanto para pacientes como para profesionales
    */
-  async _cancelarCita(patientId, args) {
+  async _cancelarCita(entityId, args) {
     const { appointmentId } = args;
 
     try {
-      const appointment = await db.Appointment.findOne({
-        where: {
-          id: appointmentId,
-          peopleId: patientId
-        },
+      // Primero buscar la cita sin restricción para determinar el rol
+      const appointment = await db.Appointment.findByPk(appointmentId, {
         include: [
           {
             model: db.Professional,
@@ -1345,7 +1392,19 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
       });
 
       if (!appointment) {
-        return { success: false, message: "Cita no encontrada o no pertenece al paciente" };
+        return { success: false, message: "Cita no encontrada" };
+      }
+
+      // Validar que la cita pertenezca al usuario (paciente o profesional)
+      const isProfessional = appointment.professionalId === entityId;
+      const isPatient = appointment.peopleId === entityId;
+
+      if (!isProfessional && !isPatient) {
+        console.log(`[_cancelarCita] Validación fallida: entityId=${entityId}, professionalId=${appointment.professionalId}, peopleId=${appointment.peopleId}`);
+        return {
+          success: false,
+          message: "No tienes permiso para cancelar esta cita"
+        };
       }
 
       // Guardar estado anterior para el historial
@@ -1371,7 +1430,8 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
       console.log(`[_cancelarCita] ✅ Cita ID=${appointment.id} cancelada exitosamente`);
 
       // Refrescar el contexto de la IA con las citas actualizadas
-      await this._refreshUserContext(null, patientId);
+      // No refrescamos el contexto porque puede causar problemas
+      // await this._refreshUserContext(null, entityId);
 
       return {
         success: true,
@@ -1419,11 +1479,59 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
       appointments: appointments.map(apt => ({
         id: apt.id,
         date: apt.startTime,
-          dateHuman: formatDateHumanWithoutTimezone(getUTCDateFromSequelize(apt.startTime)),
+        dateHuman: formatDateHumanWithoutTimezone(getUTCDateFromSequelize(apt.startTime)),
         professional: `${apt.professional.names} ${apt.professional.surNames}`,
         specialty: apt.professional.specialty
       }))
     };
+  }
+  /**
+   * Consulta la agenda del doctor (sus citas con pacientes)
+   */
+  async _consultarAgendaDoctor(professionalId) {
+    try {
+      const PeopleAttended = db.modules.operative.PeopleAttended;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const appointments = await db.Appointment.findAll({
+        where: {
+          professionalId: professionalId,
+          status: { [Op.notIn]: ['no asistio', 'cancelada'] },
+          startTime: { [Op.gte]: today }
+        },
+        include: [
+          {
+            model: PeopleAttended,
+            attributes: ['names', 'surNames', 'documentId']
+          }
+        ],
+        order: [['startTime', 'ASC']]
+      });
+
+      return {
+        success: true,
+        appointments: appointments.map(apt => {
+          const patientName = apt.PeopleAttended || apt.people ?
+            ` ` : 'Paciente';
+          return {
+            id: apt.id,
+            date: apt.startTime,
+            dateHuman: formatDateHumanWithoutTimezone(getUTCDateFromSequelize(apt.startTime)),
+            patient: patientName,
+            status: apt.status,
+            reason: apt.description || 'No especificado'
+          };
+        })
+      };
+    } catch (error) {
+      console.error('[_consultarAgendaDoctor ERROR]:', error);
+      return {
+        success: false,
+        message: "Error al consultar la agenda",
+        error: error.message
+      };
+    }
   }
 
   /**
@@ -1549,7 +1657,7 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
   /**
    * Establece contexto inicial para una conversación (pre-cargado en login)
    * @param {number} userId
-   * @param {Object} context - { patient, appointments, availability }
+   * @param {Object} context - { role, userData, patient, appointments, availability }
    */
   setInitialContext(userId, context) {
     const conversationKey = `user_${userId}`;
@@ -1558,8 +1666,11 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
     // Establecer nuevo contexto
     const convoState = { initialContext: context };
     this.conversationState.set(conversationKey, convoState);
+
     console.log('==========================================');
     console.log(`[ChatIA setInitialContext] Usuario ${userId}`);
+    console.log(`[ChatIA setInitialContext] ROL:`, context.role || 'NO DEFINIDO');
+    console.log(`[ChatIA setInitialContext] userData:`, context.userData?.names, context.userData?.surNames);
     console.log(`[ChatIA setInitialContext] Paciente:`, context.patient?.names, context.patient?.surNames);
     console.log(`[ChatIA setInitialContext] Citas: ${context.appointments?.length || 0}`);
     if (context.appointments && context.appointments.length > 0) {
@@ -1699,10 +1810,10 @@ NO preguntes nada más, NO pidas confirmación adicional. El usuario YA confirm�
  */
 function getUTCDateFromSequelize(sequelizeDate) {
   if (!sequelizeDate) return null;
-  
+
   // Si ya es un Date, usar sus componentes UTC directamente
   const date = sequelizeDate instanceof Date ? sequelizeDate : new Date(sequelizeDate);
-  
+
   // Crear una nueva fecha usando los componentes UTC como valores UTC
   // Esto preserva la hora tal como está en la BD sin conversión
   return new Date(Date.UTC(
@@ -1740,13 +1851,13 @@ function formatDateHumanWithoutTimezone(date) {
   if (!date) return '';
   const weekdays = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
   const months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
-  
+
   const weekday = weekdays[date.getUTCDay()];
   const day = date.getUTCDate();
   const month = months[date.getUTCMonth()];
   const hours = String(date.getUTCHours()).padStart(2, '0');
   const minutes = String(date.getUTCMinutes()).padStart(2, '0');
-  
+
   return `${weekday} ${day} de ${month}, ${hours}:${minutes}`;
 }
 

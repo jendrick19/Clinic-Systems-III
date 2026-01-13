@@ -17,33 +17,97 @@ const conversationalAssistantService = require('./ConversationalAssistantService
  * @param {number} patientId - ID del paciente (de la tabla PeopleAttended)
  * @returns {Promise<Object>} Contexto inicializado
  */
-async function initializeIAContext(userId, patientId) {
+async function initializeIAContext(userId, entityId) {
   try {
-    console.log(`[IAContextService] Inicializando contexto para userId=${userId}, patientId=${patientId}`);
+    console.log(`[IAContextService] Inicializando contexto para userId=${userId}, entityId=${entityId}`);
 
-    // 1. Obtener información del paciente
+    // Determinar si es Profesional o Paciente
+    const Professional = db.Professional;
     const PeopleAttended = db.modules.operative.PeopleAttended;
+
+    // Intentar buscar como profesional primero
+    let professional = null;
+    if (entityId) {
+      professional = await Professional.findByPk(entityId);
+    }
+
     let patient = null;
+    let role = 'patient';
 
-    if (patientId) {
-      patient = await PeopleAttended.findByPk(patientId);
-    } else if (userId) {
-      // Si solo viene userId, intentar usarlo como patientId
-      patient = await PeopleAttended.findByPk(userId);
+    if (professional) {
+      role = 'professional';
+      console.log(`[IAContextService] Usuario identificado como PROFESIONAL: ${professional.names} ${professional.surNames}`);
+    } else {
+      // Si no es profesional, buscar como paciente
+      if (entityId) {
+        patient = await PeopleAttended.findByPk(entityId);
+      } else if (userId) {
+        patient = await PeopleAttended.findByPk(userId);
+      }
+
+      if (patient) {
+        console.log(`[IAContextService] Usuario identificado como PACIENTE: ${patient.names} ${patient.surNames}`);
+      }
     }
 
-    if (!patient) {
-      console.warn(`[IAContextService] No se encontró paciente para userId=${userId}, patientId=${patientId}`);
+    if (!professional && !patient) {
+      console.warn(`[IAContextService] No se encontró entidad para userId=${userId}, entityId=${entityId}`);
+      // No retornamos null, permitimos contexto vacío
     }
 
-    // 2. Obtener citas activas del paciente
-    // Incluye todas las citas (pasadas y futuras) para contexto completo
     let appointments = [];
-    if (patient) {
+    let schedules = [];
+
+    if (role === 'professional') {
+      // === CONTEXTO DE PROFESIONAL ===
+      // Obtener citas donde él es el doctor
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      // Intentamos incluir datos del paciente. Si falla por alias, al menos tendremos los IDs.
+      try {
+        appointments = await db.Appointment.findAll({
+          where: {
+            professionalId: professional.id,
+            status: { [Op.notIn]: ['no asistio', 'cancelada'] },
+            startTime: { [Op.gte]: today }
+          },
+          include: [
+            {
+              model: PeopleAttended,
+              attributes: ['names', 'surNames', 'documentId']
+            }
+          ],
+          order: [['startTime', 'ASC']]
+        });
+      } catch (err) {
+        console.warn('[IAContextService] Error incluyendo paciente, cargando sin include:', err.message);
+        appointments = await db.Appointment.findAll({
+          where: {
+            professionalId: professional.id,
+            status: { [Op.notIn]: ['no asistio', 'cancelada'] },
+            startTime: { [Op.gte]: today }
+          },
+          order: [['startTime', 'ASC']]
+        });
+      }
+
+      // Obtener sus horarios
+      schedules = await db.Schedule.findAll({
+        where: {
+          professionalId: professional.id,
+          status: 'abierta',
+          startTime: { [Op.gte]: today }
+        },
+        order: [['startTime', 'ASC']]
+      });
+
+    } else if (patient) {
+      // === CONTEXTO DE PACIENTE ===
       appointments = await db.Appointment.findAll({
         where: {
           peopleId: patient.id,
-          status: { [Op.notIn]: ['no asistio', 'cancelada'] } // Excluir solo las que no asistieron
+          status: { [Op.notIn]: ['no asistio', 'cancelada'] }
         },
         include: [
           {
@@ -54,51 +118,74 @@ async function initializeIAContext(userId, patientId) {
         ],
         order: [['startTime', 'ASC']]
       });
+    }
 
-      console.log(`[IAContextService] Citas encontradas para peopleId ${patient.id}:`, appointments.length);
-      appointments.forEach(apt => {
-        console.log(`  - ID ${apt.id}: ${apt.startTime} | Status: ${apt.status} | Prof: ${apt.professional?.names}`);
+    // Preparar datos de appointments
+    const appointmentsData = [];
+    for (const apt of appointments) {
+      let patientInfo = null;
+
+      // Intentar extraer info del paciente si existe en el include
+      if (apt.PeopleAttended) {
+        patientInfo = `${apt.PeopleAttended.names} ${apt.PeopleAttended.surNames}`;
+      } else if (apt.people) { // Alias común
+        patientInfo = `${apt.people.names} ${apt.people.surNames}`;
+      } else if (role === 'professional' && apt.peopleId) {
+        // Si es profesional y no vino el include, cargar manualmente
+        try {
+          const patientData = await PeopleAttended.findByPk(apt.peopleId, {
+            attributes: ['names', 'surNames']
+          });
+          if (patientData) {
+            patientInfo = `${patientData.names} ${patientData.surNames}`;
+          }
+        } catch (err) {
+          console.warn('[IAContextService] Error cargando paciente:', err.message);
+        }
+      }
+
+      appointmentsData.push({
+        id: apt.id,
+        date_iso: apt.startTime,
+        date_human: formatDateWithoutTimezone(getUTCDateFromSequelize(apt.startTime)),
+        // Para profesional mostramos paciente, para paciente mostramos profesional
+        professional: apt.professional ? `${apt.professional.names} ${apt.professional.surNames}` : null,
+        patientName: patientInfo,
+        specialty: apt.professional ? apt.professional.specialty : (professional ? professional.specialty : null),
+        status: apt.status,
+        reason: apt.description || null
       });
     }
 
-    // 3. Obtener disponibilidad por especialidad
-    // Consulta horarios disponibles para las especialidades más comunes
+
+    // Disponibilidad general (útil para reagendar o ver huecos)
     const availability = await getAvailabilityBySpecialty();
 
-    // 4. Preparar datos estructurados
-    const appointmentsData = appointments.map(apt => ({
-      id: apt.id,
-      date_iso: apt.startTime,
-      date_human: formatDateWithoutTimezone(getUTCDateFromSequelize(apt.startTime)),
-      professional: apt.professional ? `${apt.professional.names} ${apt.professional.surNames}` : null,
-      specialty: apt.professional ? apt.professional.specialty : null,
-      status: apt.status,
-      reason: apt.description || null
-    }));
+    // Guardar contexto
+    // Usamos entityId como clave si userId es nulo, o userId si existe.
+    // AuthController pasa userId real.
+    const effectiveUserId = userId || entityId;
 
-    // 5. Guardar contexto inicial en el servicio conversacional
-    const effectiveUserId = userId || patientId;
     const contextData = {
-      patient: patient ? {
-        id: patient.id,
-        names: patient.names,
-        surNames: patient.surNames,
-        documentType: patient.documentType,
-        documentId: patient.documentId,
-        email: patient.email,
-        phone: patient.phone,
-        dateOfBirth: patient.dateOfBirth
-      } : null,
+      role: role,
+      // Guardamos la entidad principal en 'user'
+      userData: role === 'professional' ? professional : patient,
+      patient: role === 'patient' ? patient : null, // Compatibilidad hacia atrás
       appointments: appointmentsData,
-      availability
+      availability,
+      schedules: schedules.map(s => ({
+        id: s.id,
+        start: s.startTime,
+        end: s.endTime,
+        date_human: formatDateWithoutTimezone(getUTCDateFromSequelize(s.startTime))
+      }))
     };
 
+    console.log(`[IAContextService] 📦 Guardando contexto con role=${role}`);
     conversationalAssistantService.setInitialContext(effectiveUserId, contextData);
 
-    console.log(`[IAContextService] ✅ Contexto inicializado exitosamente para userId ${effectiveUserId}`);
-    console.log(`  - Paciente: ${patient?.names} ${patient?.surNames}`);
-    console.log(`  - Citas activas: ${appointmentsData.length}`);
-    console.log(`  - Especialidades con disponibilidad: ${Object.keys(availability).length}`);
+    console.log(`[IAContextService] ✅ Contexto inicializado exitosamente para ${role.toUpperCase()} (ID: ${effectiveUserId})`);
+    console.log(`  - Citas cargadas: ${appointmentsData.length}`);
 
     return contextData;
 
@@ -190,7 +277,7 @@ async function getAvailabilityBySpecialty() {
         console.log(`  - Rango original BD: ${schedule.startTime} (UTC: ${formatTimeWithoutTimezone(currentTime)}) hasta ${schedule.endTime} (UTC: ${formatTimeWithoutTimezone(endTime)})`);
 
         let slotsGenerated = 0;
-        
+
         // Generar slots de 30 minutos dentro del rango del schedule
         while (currentTime.getTime() < endTime.getTime()) {
           const slotEnd = new Date(currentTime.getTime() + SLOT_DURATION * 60000);
@@ -245,10 +332,10 @@ async function getAvailabilityBySpecialty() {
  */
 function getUTCDateFromSequelize(sequelizeDate) {
   if (!sequelizeDate) return null;
-  
+
   // Si ya es un Date, usar sus componentes UTC directamente
   const date = sequelizeDate instanceof Date ? sequelizeDate : new Date(sequelizeDate);
-  
+
   // Crear una nueva fecha usando los componentes UTC como valores UTC
   // Esto preserva la hora tal como está en la BD sin conversión
   return new Date(Date.UTC(

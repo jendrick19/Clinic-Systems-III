@@ -165,7 +165,8 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
+import { eventBus, EVENTS } from '../utils/eventBus'
 
 const emit = defineEmits(['logout'])
 
@@ -185,16 +186,46 @@ onMounted(() => {
   
   // Cargar datos de citas
   loadAppointments()
+  
+  // Escuchar eventos de actualización
+  eventBus.on(EVENTS.REFRESH_DASHBOARD, () => {
+    console.log('[Dashboard] Recibido evento de actualización, recargando...')
+    loadAppointments()
+  })
+})
+
+onUnmounted(() => {
+  // Limpiar listeners al desmontar
+  eventBus.off(EVENTS.REFRESH_DASHBOARD)
 })
 
 const loadAppointments = async () => {
-  // TODO: Implementar carga de citas desde la API
-  // Por ahora, valores por defecto
-  stats.value = {
-    citasProgramadas: 0,
-    visitas: 0,
+  try {
+    const user = localStorage.getItem('user')
+    if (!user) return
+    
+    const userDataParsed = JSON.parse(user)
+    const userId = userDataParsed?.data?.userId
+    const entityId = userDataParsed?.data?.id || userDataParsed?.id
+    
+    if (!userId && !entityId) return
+    
+    const response = await fetch(`/api/dashboard/stats?userId=${userId}&entityId=${entityId}`)
+    const data = await response.json()
+    
+    if (data.success && data.data) {
+      stats.value = {
+        citasProgramadas: data.data.citasProgramadas || 0,
+        visitas: data.data.visitasRealizadas || 0
+      }
+      nextAppointment.value = data.data.nextAppointment || null
+      console.log('[Dashboard] Estadísticas cargadas:', stats.value)
+    }
+  } catch (error) {
+    console.error('[Dashboard] Error:', error)
+    stats.value = { citasProgramadas: 0, visitas: 0 }
+    nextAppointment.value = null
   }
-  nextAppointment.value = null
 }
 
 const navigateTo = (section) => {
