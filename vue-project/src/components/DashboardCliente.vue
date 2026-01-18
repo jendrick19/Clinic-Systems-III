@@ -137,7 +137,7 @@
       </div>
 
       <!-- Próxima Cita Detail -->
-      <div v-if="nextAppointment" class="mt-8 bg-white rounded-xl shadow-md p-6 border border-cyan-100">
+      <div v-if="nextAppointment && nextAppointment.startTime" class="mt-8 bg-white rounded-xl shadow-md p-6 border border-cyan-100">
         <h3 class="text-lg font-semibold text-slate-900 mb-4">Detalle de Próxima Cita</h3>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>

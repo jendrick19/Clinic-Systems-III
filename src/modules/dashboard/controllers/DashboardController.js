@@ -117,15 +117,8 @@ async function getDashboardStats(req, res) {
                 }
 
                 nextAppointment = {
-                    fecha: aptDate.toLocaleDateString('es-VE', {
-                        day: '2-digit',
-                        month: '2-digit',
-                        year: 'numeric'
-                    }),
-                    hora: aptDate.toLocaleTimeString('es-VE', {
-                        hour: '2-digit',
-                        minute: '2-digit'
-                    }),
+                    fecha: formatFechaUTC(aptDate.startTime),
+                    hora: formatHoraUTC(aptDate.startTime),
                     paciente: patientName,
                     estado: proximaCita.status
                 };
@@ -163,15 +156,8 @@ async function getDashboardStats(req, res) {
                 upcomingAppointmentsList.push({
                     id: apt.id,
                     paciente: patientName,
-                    fecha: aptDate.toLocaleDateString('es-VE', {
-                        day: '2-digit',
-                        month: '2-digit',
-                        year: 'numeric'
-                    }),
-                    hora: aptDate.toLocaleTimeString('es-VE', {
-                        hour: '2-digit',
-                        minute: '2-digit'
-                    }),
+                    fecha: formatFechaUTC(apt.startTime),
+                    hora: formatHoraUTC(apt.startTime),
                     estado: apt.status
                 });
             }
@@ -252,7 +238,7 @@ async function getDashboardStats(req, res) {
             };
         }
 
-        return res.json({
+        return res.status(200).json({
             success: true,
             data: stats
         });
@@ -266,7 +252,43 @@ async function getDashboardStats(req, res) {
         });
     }
 }
+// --- CORRECCIÓN DEFINITIVA DE ZONA HORARIA ---
 
+const formatFechaUTC = (dateInput) => {
+  if (!dateInput) return '---';
+  
+  // TRUCO: Si es texto "2026-01-19 08:00:00", le agregamos 'Z' al final
+  // Esto obliga a Javascript a entender que SON las 8:00 UTC, no las 8:00 Venezuela.
+  let dateStr = String(dateInput);
+  if (!dateStr.endsWith('Z')) dateStr += 'Z';
+  
+  const d = new Date(dateStr);
+  
+  // Ahora getUTC* leerá el número exacto
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const year = d.getUTCFullYear();
+  return `${day}/${month}/${year}`;
+};
+
+const formatHoraUTC = (dateInput) => {
+  if (!dateInput) return '--:--';
+  
+  // TRUCO: Forzar interpretación como UTC agregando 'Z'
+  let dateStr = String(dateInput);
+  if (!dateStr.endsWith('Z')) dateStr += 'Z';
+  
+  const d = new Date(dateStr);
+  
+  let hours = d.getUTCHours(); // Si era 08:00Z, esto devuelve 8
+  const minutes = String(d.getUTCMinutes()).padStart(2, '0');
+  const ampm = hours >= 12 ? 'PM' : 'AM';
+  
+  hours = hours % 12;
+  hours = hours ? hours : 12;
+  
+  return `${hours}:${minutes} ${ampm}`;
+};
 module.exports = {
     getDashboardStats
 };

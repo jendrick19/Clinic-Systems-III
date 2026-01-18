@@ -332,21 +332,14 @@ async function getAvailabilityBySpecialty() {
  */
 function getUTCDateFromSequelize(sequelizeDate) {
   if (!sequelizeDate) return null;
-
-  // Si ya es un Date, usar sus componentes UTC directamente
-  const date = sequelizeDate instanceof Date ? sequelizeDate : new Date(sequelizeDate);
-
-  // Crear una nueva fecha usando los componentes UTC como valores UTC
-  // Esto preserva la hora tal como está en la BD sin conversión
-  return new Date(Date.UTC(
-    date.getUTCFullYear(),
-    date.getUTCMonth(),
-    date.getUTCDate(),
-    date.getUTCHours(),
-    date.getUTCMinutes(),
-    date.getUTCSeconds(),
-    date.getUTCMilliseconds()
-  ));
+  
+  // Forzar UTC agregando Z si es un string
+  let dateStr = String(sequelizeDate);
+  if (dateStr.indexOf('Z') === -1 && dateStr.indexOf('+') === -1) {
+      dateStr += 'Z';
+  }
+  
+  return new Date(dateStr);
 }
 
 /**
@@ -355,12 +348,16 @@ function getUTCDateFromSequelize(sequelizeDate) {
  * @returns {string} Fecha formateada en formato DD/MM/YYYY HH:mm
  */
 function formatDateWithoutTimezone(date) {
-  if (!date) return '';
-  const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(date.getUTCDate()).padStart(2, '0');
-  const hours = String(date.getUTCHours()).padStart(2, '0');
-  const minutes = String(date.getUTCMinutes()).padStart(2, '0');
+  // Asegurar que date sea un objeto Date creado como UTC
+  const d = date instanceof Date ? date : getUTCDateFromSequelize(date);
+  if (!d || isNaN(d.getTime())) return '';
+
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const year = d.getUTCFullYear();
+  const hours = String(d.getUTCHours()).padStart(2, '0');
+  const minutes = String(d.getUTCMinutes()).padStart(2, '0');
+  
   return `${day}/${month}/${year} ${hours}:${minutes}`;
 }
 

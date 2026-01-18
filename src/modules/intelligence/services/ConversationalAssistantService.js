@@ -1810,21 +1810,15 @@ ${userContext.isProfessional ? `
  */
 function getUTCDateFromSequelize(sequelizeDate) {
   if (!sequelizeDate) return null;
-
-  // Si ya es un Date, usar sus componentes UTC directamente
-  const date = sequelizeDate instanceof Date ? sequelizeDate : new Date(sequelizeDate);
-
-  // Crear una nueva fecha usando los componentes UTC como valores UTC
-  // Esto preserva la hora tal como está en la BD sin conversión
-  return new Date(Date.UTC(
-    date.getUTCFullYear(),
-    date.getUTCMonth(),
-    date.getUTCDate(),
-    date.getUTCHours(),
-    date.getUTCMinutes(),
-    date.getUTCSeconds(),
-    date.getUTCMilliseconds()
-  ));
+  
+  // CORRECCIÓN: Tratar el string de la BD como UTC puro
+  let dateStr = String(sequelizeDate);
+  // Si no tiene zona horaria explícita (Z o +00), asumimos que es UTC (Z)
+  if (!dateStr.endsWith('Z') && !dateStr.includes('+')) {
+      dateStr += 'Z'; 
+  }
+  
+  return new Date(dateStr);
 }
 
 /**
