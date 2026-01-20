@@ -2,16 +2,16 @@ require('dotenv').config();
 const sharedConfig = {
   dialect: 'mysql',
   logging: false,
+  timezone: '-04:00', // Zona horaria de Venezuela
+  dialectOptions: {
+    dateStrings: true, // Lee las fechas como strings para evitar conversiones automáticas
+    typeCast: true,
+  },
 };
 
 module.exports = {
   development: {
     ...sharedConfig,
-    timezone: '+00:00', // <--- IMPORTANTE: Fuerza a todo a hablar en UTC
-    dialectOptions: {
-      dateStrings: true, // Lee las fechas como strings para evitar conversiones automáticas
-      typeCast: true,
-    },
     username: process.env.DB_USERNAME,
     password: process.env.DB_PASSWORD,
     database: process.env.DB_NAME,

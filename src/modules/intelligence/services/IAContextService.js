@@ -268,45 +268,91 @@ async function getAvailabilityBySpecialty() {
       const SLOT_DURATION = 30; // minutos
 
       for (const schedule of schedules) {
-        // Trabajar directamente con el objeto Date de Sequelize usando componentes UTC
-        let currentTime = getUTCDateFromSequelize(schedule.startTime);
-        const endTime = getUTCDateFromSequelize(schedule.endTime);
+        console.log(`[IAContextService] ===== Schedule ID ${schedule.id} =====`);
+        console.log(`[IAContextService] startTime RAW:`, schedule.startTime);
+        console.log(`[IAContextService] startTime TYPE:`, typeof schedule.startTime);
+        console.log(`[IAContextService] endTime RAW:`, schedule.endTime);
+
+        // SOLUCIÓN DEFINITIVA: Trabajar directamente con strings MySQL
+        // schedule.startTime = "2026-01-25 12:00:00"
+        const parseMySQL = (mysqlStr) => {
+          const str = String(mysqlStr);
+          console.log(`[parseMySQL] Intentando parsear:`, str);
+          const match = str.match(/(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})/);
+          if (match) {
+            const result = {
+              year: match[1],
+              month: match[2],
+              day: match[3],
+              hours: parseInt(match[4]),
+              minutes: parseInt(match[5]),
+              seconds: match[6]
+            };
+            console.log(`[parseMySQL] Resultado:`, result);
+            return result;
+          }
+          console.warn(`[parseMySQL] NO MATCH para:`, str);
+          return null;
+        };
+
+        const start = parseMySQL(schedule.startTime);
+        const end = parseMySQL(schedule.endTime);
+
+        if (!start || !end) {
+          console.warn(`[IAContextService] No se pudo parsear schedule ${schedule.id}`);
+          continue;
+        }
+
         const prof = professionals.find(p => p.id === schedule.professionalId);
 
         console.log(`[IAContextService] Generando slots para Schedule ID ${schedule.id}:`);
-        console.log(`  - Rango original BD: ${schedule.startTime} (UTC: ${formatTimeWithoutTimezone(currentTime)}) hasta ${schedule.endTime} (UTC: ${formatTimeWithoutTimezone(endTime)})`);
+        console.log(`  - Rango original BD: ${schedule.startTime} hasta ${schedule.endTime}`);
 
         let slotsGenerated = 0;
+        let currentHour = start.hours;
+        let currentMinute = start.minutes;
 
-        // Generar slots de 30 minutos dentro del rango del schedule
-        while (currentTime.getTime() < endTime.getTime()) {
-          const slotEnd = new Date(currentTime.getTime() + SLOT_DURATION * 60000);
-          if (slotEnd.getTime() > endTime.getTime()) break;
+        // Generar slots de 30 minutos
+        while (currentHour < end.hours || (currentHour === end.hours && currentMinute < end.minutes)) {
+          let endHour = currentHour;
+          let endMinute = currentMinute + SLOT_DURATION;
+          if (endMinute >= 60) {
+            endHour += 1;
+            endMinute -= 60;
+          }
 
-          // Verificar si este slot específico está ocupado
-          const isTaken = takenAppointments.some(app => {
-            if (!app.startTime || app.professionalId !== schedule.professionalId) return false;
-            const appointmentTime = getUTCDateFromSequelize(app.startTime);
-            return Math.abs(appointmentTime.getTime() - currentTime.getTime()) < 60000; // Dentro de 1 minuto
+          // Verificar si este slot está ocupado
+          const isTaken = takenAppointments.some(apt => {
+            if (!apt.startTime || apt.professionalId !== schedule.professionalId) return false;
+            const aptParsed = parseMySQL(apt.startTime);
+            if (!aptParsed) return false;
+            return aptParsed.hours === currentHour && Math.abs(aptParsed.minutes - currentMinute) < 30;
           });
 
           if (!isTaken) {
+            const humanFormat = `${start.day}/${start.month}/${start.year} ${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}`;
+            const endHumanFormat = `${start.day}/${start.month}/${start.year} ${String(endHour).padStart(2, '0')}:${String(endMinute).padStart(2, '0')}`;
+
             slots.push({
               scheduleId: schedule.id,
               professionalId: schedule.professionalId,
               professional: prof ? `${prof.names} ${prof.surNames}` : null,
-              startTime_iso: currentTime,
-              endTime_iso: endTime,
-              date_iso: currentTime,
-              startTime_human: formatDateWithoutTimezone(currentTime),
-              endTime_human: formatDateWithoutTimezone(endTime),
-              date_human: formatDateWithoutTimezone(currentTime)
+              startTime_iso: `${start.year}-${start.month}-${start.day} ${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}:00`,
+              endTime_iso: `${start.year}-${start.month}-${start.day} ${String(endHour).padStart(2, '0')}:${String(endMinute).padStart(2, '0')}:00`,
+              date_iso: `${start.year}-${start.month}-${start.day} ${String(currentHour).padStart(2, '0')}:${String(currentMinute).padStart(2, '0')}:00`,
+              startTime_human: humanFormat,
+              endTime_human: endHumanFormat,
+              date_human: humanFormat
             });
             slotsGenerated++;
           }
 
           // Avanzar 30 minutos
-          currentTime = new Date(currentTime.getTime() + SLOT_DURATION * 60000);
+          currentMinute += SLOT_DURATION;
+          if (currentMinute >= 60) {
+            currentHour += 1;
+            currentMinute -= 60;
+          }
         }
 
         console.log(`  - Slots libres generados: ${slotsGenerated}`);
@@ -332,13 +378,13 @@ async function getAvailabilityBySpecialty() {
  */
 function getUTCDateFromSequelize(sequelizeDate) {
   if (!sequelizeDate) return null;
-  
+
   // Forzar UTC agregando Z si es un string
   let dateStr = String(sequelizeDate);
   if (dateStr.indexOf('Z') === -1 && dateStr.indexOf('+') === -1) {
-      dateStr += 'Z';
+    dateStr += 'Z';
   }
-  
+
   return new Date(dateStr);
 }
 
@@ -348,17 +394,36 @@ function getUTCDateFromSequelize(sequelizeDate) {
  * @returns {string} Fecha formateada en formato DD/MM/YYYY HH:mm
  */
 function formatDateWithoutTimezone(date) {
-  // Asegurar que date sea un objeto Date creado como UTC
+  if (!date) return '';
+
+  // SOLUCIÓN: Intentar extraer directamente del string MySQL
+  const str = String(date);
+
+  // Formato MySQL: "2026-01-25 13:00:00"
+  const mysqlMatch = str.match(/(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})/);
+  if (mysqlMatch) {
+    const [, year, month, day, hours, minutes] = mysqlMatch;
+    return `${day}/${month}/${year} ${hours}:${minutes}`;
+  }
+
+  // Formato ISO: "2026-01-25T13:00:00-04:00" o "2026-01-25T13:00:00.000Z"
+  const isoMatch = str.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (isoMatch) {
+    const [, year, month, day, hours, minutes] = isoMatch;
+    return `${day}/${month}/${year} ${hours}:${minutes}`;
+  }
+
+  // Fallback: usar objeto Date con UTC (puede tener conversiones)
   const d = date instanceof Date ? date : getUTCDateFromSequelize(date);
   if (!d || isNaN(d.getTime())) return '';
 
-  const day = String(d.getUTCDate()).padStart(2, '0');
-  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const year = d.getUTCFullYear();
-  const hours = String(d.getUTCHours()).padStart(2, '0');
-  const minutes = String(d.getUTCMinutes()).padStart(2, '0');
-  
-  return `${day}/${month}/${year} ${hours}:${minutes}`;
+  const dayNum = String(d.getUTCDate()).padStart(2, '0');
+  const monthNum = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const yearNum = d.getUTCFullYear();
+  const hoursNum = String(d.getUTCHours()).padStart(2, '0');
+  const minutesNum = String(d.getUTCMinutes()).padStart(2, '0');
+
+  return `${dayNum}/${monthNum}/${yearNum} ${hoursNum}:${minutesNum}`;
 }
 
 /**

@@ -101,7 +101,7 @@ class ConversationalAssistantService {
         convoState.lastShownOptions = availabilityContext.freeSlots.map((slot, idx) => ({
           optionNumber: idx + 1,
           scheduleId: slot.scheduleId,
-          startTime: slot.startTime.toISOString(),
+          startTime: slot.startTime_iso || slot.startTime,  // Usar el string ISO/MySQL directamente
           dateHuman: slot.dateHuman,
           professional: slot.professionalName,
           specialty: availabilityContext.specialty
@@ -870,20 +870,77 @@ ${userContext.isProfessional ? `
         };
       }
 
-      const requestedStartTime = getUTCDateFromSequelize(startTime);
-      const SLOT_DURATION = 30; // minutos
-      const requestedEndTime = new Date(requestedStartTime.getTime() + SLOT_DURATION * 60000);
+      // SOLUCIÓN: Extraer hora directamente sin conversiones de zona horaria
+      const extractTimeFromISO = (dateInput) => {
+        const str = String(dateInput);
 
-      // 3. Verificar que el horario solicitado está dentro del rango del Schedule
-      const scheduleStart = getUTCDateFromSequelize(schedule.startTime);
-      const scheduleEnd = getUTCDateFromSequelize(schedule.endTime);
+        // Intentar varios formatos:
+        // 1. ISO: "2026-01-25T13:00:00.000Z"
+        let match = str.match(/T(\d{2}):(\d{2})/);
+        if (match) {
+          return { hours: parseInt(match[1]), minutes: parseInt(match[2]) };
+        }
 
-      if (requestedStartTime < scheduleStart || requestedEndTime > scheduleEnd) {
+        // 2. MySQL: "2026-01-25 13:00:00"
+        match = str.match(/(\d{4}-\d{2}-\d{2})\s+(\d{2}):(\d{2})/);
+        if (match) {
+          return { hours: parseInt(match[2]), minutes: parseInt(match[3]) };
+        }
+
+        // 3. JavaScript Date toString: "Sun Jan 25 2026 09:00:00 GMT-0400"
+        // En este caso, usar getHours() y getMinutes() del objeto Date
+        if (dateInput instanceof Date) {
+          return { hours: dateInput.getHours(), minutes: dateInput.getMinutes() };
+        }
+
+        // 4. Intentar crear un Date y extraer
+        try {
+          const d = new Date(dateInput);
+          if (!isNaN(d.getTime())) {
+            return { hours: d.getHours(), minutes: d.getMinutes() };
+          }
+        } catch (e) {
+          console.error('[extractTimeFromISO] Error:', e);
+        }
+
+        return null;
+      };
+
+      const requestedTime = extractTimeFromISO(startTime);
+      const scheduleStartTime = extractTimeFromISO(schedule.startTime);
+      const scheduleEndTime = extractTimeFromISO(schedule.endTime);
+
+      console.log('[_agendarCita] Comparación de horarios (extrayendo del ISO):');
+      console.log('  - Hora solicitada:', requestedTime);
+      console.log('  - Rango del schedule:', scheduleStartTime, 'hasta', scheduleEndTime);
+      console.log('  - startTime original:', startTime);
+      console.log('  - schedule.startTime original:', schedule.startTime);
+
+      if (!requestedTime || !scheduleStartTime || !scheduleEndTime) {
         return {
           success: false,
-          message: `El horario solicitado (${formatDateWithoutTimezone(requestedStartTime)}) está fuera del rango de la agenda (${formatDateWithoutTimezone(scheduleStart)} - ${formatDateWithoutTimezone(scheduleEnd)})`
+          message: 'Error al procesar las horas. Por favor intenta nuevamente.'
         };
       }
+
+      // Convertir a minutos totales para comparar fácilmente
+      const requestedMinutes = requestedTime.hours * 60 + requestedTime.minutes;
+      const scheduleStartMinutes = scheduleStartTime.hours * 60 + scheduleStartTime.minutes;
+      const scheduleEndMinutes = scheduleEndTime.hours * 60 + scheduleEndTime.minutes;
+      const requestedEndMinutes = requestedMinutes + 30; // Duración de 30 minutos
+
+      // 3. Verificar que el horario solicitado está dentro del rango del Schedule
+      if (requestedMinutes < scheduleStartMinutes || requestedEndMinutes > scheduleEndMinutes) {
+        return {
+          success: false,
+          message: `El horario solicitado (${requestedTime.hours}:${String(requestedTime.minutes).padStart(2, '0')}) está fuera del rango de la agenda (${scheduleStartTime.hours}:${String(scheduleStartTime.minutes).padStart(2, '0')} - ${scheduleEndTime.hours}:${String(scheduleEndTime.minutes).padStart(2, '0')})`
+        };
+      }
+
+      // Crear objetos Date para las validaciones de solapamiento (usando new Date directamente)
+      const requestedStartTime = new Date(startTime);
+      const SLOT_DURATION = 30; // minutos
+      const requestedEndTime = new Date(requestedStartTime.getTime() + SLOT_DURATION * 60000);
 
       // 4. Verificar que no haya solapamiento con citas del mismo paciente
       const patientOverlap = await this._checkPatientAppointmentOverlap(
@@ -940,13 +997,56 @@ ${userContext.isProfessional ? `
       }
 
       // 7. Crear la cita con todos los datos necesarios
+      // Convertir a formato MySQL sin conversiones de zona horaria
+      const toMySQLFormat = (isoString) => {
+        console.log('[toMySQLFormat] Input:', isoString);
+        // Extraer fecha y hora del ISO string
+        // "2026-01-25T13:00:00-04:00" -> "2026-01-25 13:00:00"
+        const match = String(isoString).match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/);
+        if (match) {
+          const result = `${match[1]}-${match[2]}-${match[3]} ${match[4]}:${match[5]}:${match[6]}`;
+          console.log('[toMySQLFormat] Output (matched):', result);
+          return result;
+        }
+        // Fallback: usar el string tal cual si ya está en formato MySQL
+        const result = String(isoString).replace('T', ' ').split('.')[0].split('-04:00')[0].split('Z')[0];
+        console.log('[toMySQLFormat] Output (fallback):', result);
+        return result;
+      };
+
+      // Calcular endTime sumando 30 minutos al startTime
+      const calculateEndTime = (startTimeISO) => {
+        const match = String(startTimeISO).match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+        if (match) {
+          const [, year, month, day, hours, minutes] = match;
+          let endHour = parseInt(hours);
+          let endMin = parseInt(minutes) + 30;
+          if (endMin >= 60) {
+            endHour += 1;
+            endMin -= 60;
+          }
+          return `${year}-${month}-${day}T${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}:00-04:00`;
+        }
+        return startTimeISO; // Fallback
+      };
+
+      const startTimeMySQL = toMySQLFormat(startTime);
+      const endTimeISO = calculateEndTime(startTime);
+      const endTimeMySQL = toMySQLFormat(endTimeISO);
+
+      console.log('[_agendarCita] Tiempos calculados:');
+      console.log('  - startTime original:', startTime);
+      console.log('  - startTime MySQL:', startTimeMySQL);
+      console.log('  - endTime ISO:', endTimeISO);
+      console.log('  - endTime MySQL:', endTimeMySQL);
+
       const appointmentData = {
         peopleId: patientId,
         professionalId: schedule.professionalId,
         scheduleId: scheduleId,
         unitId: schedule.unitId,
-        startTime: requestedStartTime,
-        endTime: requestedEndTime,
+        startTime: startTimeMySQL,
+        endTime: endTimeMySQL,
         status: 'solicitada',
         reason: reason || 'Consulta dental',
         channel: 'presencial'
@@ -989,7 +1089,7 @@ ${userContext.isProfessional ? `
           professional: schedule.professional ?
             `${schedule.professional.names} ${schedule.professional.surNames}` : null,
           specialty: schedule.professional?.specialty || null,
-          dateHuman: formatDateHumanWithoutTimezone(requestedStartTime)
+          dateHuman: formatDateHumanWithoutTimezone(startTimeMySQL)  // Usar el string MySQL
         }
       };
 
@@ -1810,14 +1910,14 @@ ${userContext.isProfessional ? `
  */
 function getUTCDateFromSequelize(sequelizeDate) {
   if (!sequelizeDate) return null;
-  
+
   // CORRECCIÓN: Tratar el string de la BD como UTC puro
   let dateStr = String(sequelizeDate);
   // Si no tiene zona horaria explícita (Z o +00), asumimos que es UTC (Z)
   if (!dateStr.endsWith('Z') && !dateStr.includes('+')) {
-      dateStr += 'Z'; 
+    dateStr += 'Z';
   }
-  
+
   return new Date(dateStr);
 }
 
@@ -1828,6 +1928,25 @@ function getUTCDateFromSequelize(sequelizeDate) {
  */
 function formatDateWithoutTimezone(date) {
   if (!date) return '';
+
+  // SOLUCIÓN: Intentar extraer directamente del string
+  const str = String(date);
+
+  // Formato MySQL: "2026-01-25 13:00:00"
+  const mysqlMatch = str.match(/(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):(\d{2})/);
+  if (mysqlMatch) {
+    const [, year, month, day, hours, minutes] = mysqlMatch;
+    return `${day}/${month}/${year} ${hours}:${minutes}`;
+  }
+
+  // Formato ISO: "2026-01-25T13:00:00-04:00" o "2026-01-25T13:00:00.000Z"
+  const isoMatch = str.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (isoMatch) {
+    const [, year, month, day, hours, minutes] = isoMatch;
+    return `${day}/${month}/${year} ${hours}:${minutes}`;
+  }
+
+  // Fallback: usar objeto Date
   const year = date.getUTCFullYear();
   const month = String(date.getUTCMonth() + 1).padStart(2, '0');
   const day = String(date.getUTCDate()).padStart(2, '0');
@@ -1846,6 +1965,30 @@ function formatDateHumanWithoutTimezone(date) {
   const weekdays = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
   const months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
+  // SOLUCIÓN: Intentar extraer del string primero
+  const str = String(date);
+
+  // Formato MySQL: "2026-01-25 12:00:00"
+  const mysqlMatch = str.match(/(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/);
+  if (mysqlMatch) {
+    const [, year, month, day, hours, minutes] = mysqlMatch;
+    const dateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+    const weekday = weekdays[dateObj.getDay()];
+    const monthName = months[parseInt(month) - 1];
+    return `${weekday} ${parseInt(day)} de ${monthName}, ${hours}:${minutes}`;
+  }
+
+  // Formato ISO: "2026-01-25T12:00:00-04:00"
+  const isoMatch = str.match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  if (isoMatch) {
+    const [, year, month, day, hours, minutes] = isoMatch;
+    const dateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+    const weekday = weekdays[dateObj.getDay()];
+    const monthName = months[parseInt(month) - 1];
+    return `${weekday} ${parseInt(day)} de ${monthName}, ${hours}:${minutes}`;
+  }
+
+  // Fallback: usar objeto Date
   const weekday = weekdays[date.getUTCDay()];
   const day = date.getUTCDate();
   const month = months[date.getUTCMonth()];
