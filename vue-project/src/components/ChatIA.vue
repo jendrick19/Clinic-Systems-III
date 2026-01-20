@@ -275,9 +275,22 @@ const sendMessage = async () => {
             // Extraer rango de fechas del primer y último slot
             const firstSlot = slots[0];
             const lastSlot = slots[slots.length - 1];
-            const firstTime = firstSlot.startTime_human?.split(' ')[1] || '';
-            const lastTime = lastSlot.endTime_human?.split(' ')[1] || '';
-            modalDateRange.value = `${firstTime} - ${lastTime}`;
+            
+            // Extraer la fecha y hora del primer slot
+            const firstDateTime = firstSlot.startTime_human?.split(' ') || [];
+            const firstDate = firstDateTime[0] || ''; // DD/MM/YYYY
+            const firstTime = firstDateTime[1] || ''; // HH:MM
+            
+            // Extraer solo la hora de inicio del último slot (no el endTime que es del schedule completo)
+            const lastDateTime = lastSlot.startTime_human?.split(' ') || [];
+            const lastTime = lastDateTime[1] || ''; // HH:MM
+            
+            // Mostrar fecha y rango de horas disponibles
+            if (firstTime === lastTime) {
+              modalDateRange.value = `${firstDate} • ${to12h(firstTime)}`;
+            } else {
+              modalDateRange.value = `${firstDate} • ${to12h(firstTime)} - ${to12h(lastTime)}`;
+            }
             
             console.log('[ChatIA] Abriendo modal con', slots.length, 'slots');
             console.log('[ChatIA] Primer slot:', modalSlots.value[0]);

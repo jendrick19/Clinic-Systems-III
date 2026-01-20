@@ -6,7 +6,6 @@
         <div>
           <h2>📅 Selecciona tu horario</h2>
           <p class="subtitle">{{ specialty }} - {{ professionalName }}</p>
-          <p class="date-range">{{ dateRange }}</p>
         </div>
         <button class="close-btn" @click="handleCancel" aria-label="Cerrar">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -198,15 +197,9 @@ watch(() => props.isOpen, (newVal) => {
 
 .subtitle {
   margin: 6px 0 0 0;
-  font-size: 15px;
-  color: #6366f1;
+  font-size: 20px;
+  color: #06b6d4;
   font-weight: 600;
-}
-
-.date-range {
-  margin: 4px 0 0 0;
-  font-size: 14px;
-  color: #6b7280;
 }
 
 .close-btn {
@@ -284,11 +277,11 @@ watch(() => props.isOpen, (newVal) => {
 }
 
 .slot-btn.selected {
-  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-  border-color: #6366f1;
+  background: linear-gradient(135deg, #06b6d4 0%, #14b8a6 100%);
+  border-color: #06b6d4;
   color: white;
   transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(99, 102, 241, 0.4);
+  box-shadow: 0 8px 20px rgba(6, 182, 212, 0.4);
 }
 
 .slot-number {
@@ -340,13 +333,13 @@ watch(() => props.isOpen, (newVal) => {
 }
 
 .btn-confirm {
-  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+  background: linear-gradient(135deg, #06b6d4 0%, #14b8a6 100%);
   color: white;
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+  box-shadow: 0 4px 12px rgba(6, 182, 212, 0.3);
 }
 
 .btn-confirm:hover:not(:disabled) {
-  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.4);
+  box-shadow: 0 6px 20px rgba(6, 182, 212, 0.4);
   transform: translateY(-1px);
 }
 
