@@ -282,7 +282,8 @@ ${userContext.isProfessional ? `
         action: assistantMessage.function_call?.name || null,
         actionResult: actionResult,
         requiresConfirmation: this._requiresConfirmation(assistantMessage.function_call?.name),
-        appointmentChanged: ['agendar_cita', 'cancelar_cita', 'reagendar_cita'].includes(assistantMessage.function_call?.name) && actionResult?.success
+        appointmentChanged: ['agendar_cita', 'cancelar_cita', 'reagendar_cita'].includes(assistantMessage.function_call?.name) && actionResult?.success,
+        fullAvailability: fullAvailability  // Agregar disponibilidad completa para el modal
       };
 
     } catch (error) {
@@ -798,19 +799,19 @@ ${userContext.isProfessional ? `
     try {
       switch (functionName) {
         case "agendar_cita":
-          return await this._agendarCita(patientId, args);
+          return await this._agendarCita(patientId, args, userId);
 
         case "confirmar_cita":
-          return await this._confirmarCita(patientId, args);
+          return await this._confirmarCita(patientId, args, userId);
 
         case "reagendar_cita":
-          return await this._reagendarCita(patientId, args);
+          return await this._reagendarCita(patientId, args, userId);
 
         case "cancelar_cita":
-          return await this._cancelarCita(patientId, args);
+          return await this._cancelarCita(patientId, args, userId);
 
         case "consultar_citas":
-          return await this._consultarCitas(patientId);
+          return await this._consultarCitas(patientId, userId);
 
         case "consultar_mi_agenda":
           return await this._consultarAgendaDoctor(patientId);
@@ -829,13 +830,16 @@ ${userContext.isProfessional ? `
 
   /**
    * Agenda una nueva cita con validaciones completas
+   * @param {number} patientId - ID del paciente
+   * @param {Object} args - Argumentos de la función { scheduleId, startTime, reason }
+   * @param {number} userId - ID del usuario de sistema (opcional)
    */
-  async _agendarCita(patientId, args) {
+  async _agendarCita(patientId, args, userId = null) {
     const { scheduleId, startTime, reason } = args;
 
     console.log('========== INICIO _agendarCita ==========');
-    console.log('[_agendarCita] patientId:', patientId);
-    console.log('[_agendarCita] args:', JSON.stringify(args, null, 2));
+    console.log(`[_agendarCita] patientId: ${patientId}, userId: ${userId || 'N/A'}`);
+    console.log(`[_agendarCita] args:`, JSON.stringify(args, null, 2));
 
     try {
       // 1. Obtener información del Schedule con includes necesarios
@@ -1017,7 +1021,8 @@ ${userContext.isProfessional ? `
 
       // Calcular endTime sumando 30 minutos al startTime
       const calculateEndTime = (startTimeISO) => {
-        const match = String(startTimeISO).match(/(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+        // Regex para soportar tanto "T" como espacio
+        const match = String(startTimeISO).match(/(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})/);
         if (match) {
           const [, year, month, day, hours, minutes] = match;
           let endHour = parseInt(hours);
@@ -1074,7 +1079,8 @@ ${userContext.isProfessional ? `
       console.log('========== FIN _agendarCita (ÉXITO) ==========');
 
       // Refrescar el contexto de la IA con las citas actualizadas
-      await this._refreshUserContext(null, patientId);
+      console.log(`[ChatIA _agendarCita] Iniciando actualización de contexto para userId=${userId || 'N/A'}, patientId=${patientId}`);
+      await this._refreshUserContext(userId, patientId);
 
       // 9. Retornar información completa de la cita creada
       return {

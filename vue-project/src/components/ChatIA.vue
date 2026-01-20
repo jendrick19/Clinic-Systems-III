@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted, nextTick } from 'vue'
 import { eventBus, EVENTS } from '../utils/eventBus'
+import AppointmentSelectorModal from './AppointmentSelectorModal.vue'
 
 const messages = ref([
   { 
@@ -12,6 +13,14 @@ const messages = ref([
 const userInput = ref('')
 const isLoading = ref(false)
 const chatContainer = ref(null)
+
+// Modal de selección de horarios
+const showAppointmentModal = ref(false)
+const modalSlots = ref([])
+const modalSpecialty = ref('')
+const modalProfessional = ref('')
+const modalDateRange = ref('')
+const modalScheduleId = ref(null)
 
 // Para pruebas, usaremos un professionalId fijo si no se proporciona uno
 const professionalId = ref(1) 
@@ -197,7 +206,96 @@ const sendMessage = async () => {
     if (result.success && result.data) {
       const assistantPayload = result.data;
       const assistantMessage = assistantPayload.message || 'Lo siento, no entendí. ¿Puedes repetirlo?';
-      messages.value.push({ role: 'assistant', content: assistantMessage })
+      
+      // DEBUG: Ver qué llega del backend
+      console.log('[ChatIA] Respuesta del backend:', assistantPayload);
+      console.log('[ChatIA] fullAvailability:', assistantPayload.fullAvailability);
+      
+      // Detectar si la respuesta contiene horarios disponibles
+      const hasAvailability = assistantMessage.includes('Horarios disponibles') || 
+                             assistantMessage.includes('horarios libres') ||
+                             assistantMessage.includes('horarios están libres');
+      
+      if (hasAvailability && assistantPayload.fullAvailability) {
+        // Extraer slots de la disponibilidad completa
+        const availability = assistantPayload.fullAvailability;
+        const specialtyKeys = Object.keys(availability);
+        
+        // Detectar qué especialidad mencionó el usuario o la IA
+        let detectedSpecialty = null;
+        const messageToCheck = (userText + ' ' + assistantMessage).toLowerCase();
+        
+        // Buscar la especialidad mencionada
+        for (const specialty of specialtyKeys) {
+          if (messageToCheck.includes(specialty.toLowerCase())) {
+            detectedSpecialty = specialty;
+            break;
+          }
+        }
+        
+        // Si no se detectó, usar la primera con horarios
+        if (!detectedSpecialty) {
+          detectedSpecialty = specialtyKeys.find(s => availability[s] && availability[s].length > 0);
+        }
+        
+        console.log('[ChatIA] Especialidad detectada:', detectedSpecialty);
+        
+        // Función helper para convertir hora militar a 12h
+        const to12h = (time24) => {
+          if (!time24) return '';
+          const [hours, minutes] = time24.split(':');
+          let h = parseInt(hours, 10);
+          const ampm = h >= 12 ? 'PM' : 'AM';
+          h = h % 12;
+          h = h ? h : 12; // la hora 0 debe ser 12
+          return `${h}:${minutes} ${ampm}`;
+        };
+
+        if (detectedSpecialty) {
+          const slots = availability[detectedSpecialty];
+          
+          if (slots && slots.length > 0) {
+            // Formatear slots para el modal
+            modalSlots.value = slots.map((slot, idx) => {
+              // Extraer solo la hora del formato "DD/MM/YYYY HH:MM"
+              const timePart = slot.startTime_human?.split(' ')[1] || slot.date_human?.split(' ')[1] || '';
+              return {
+                index: idx + 1,
+                time: to12h(timePart), // Convertir a 12h
+                scheduleId: slot.scheduleId,
+                startTime_iso: slot.startTime_iso || slot.date_iso,
+                professional: slot.professional
+              };
+            });
+            
+            modalSpecialty.value = detectedSpecialty;
+            modalProfessional.value = slots[0]?.professional || 'Profesional';
+            modalScheduleId.value = slots[0]?.scheduleId;
+            
+            // Extraer rango de fechas del primer y último slot
+            const firstSlot = slots[0];
+            const lastSlot = slots[slots.length - 1];
+            const firstTime = firstSlot.startTime_human?.split(' ')[1] || '';
+            const lastTime = lastSlot.endTime_human?.split(' ')[1] || '';
+            modalDateRange.value = `${firstTime} - ${lastTime}`;
+            
+            console.log('[ChatIA] Abriendo modal con', slots.length, 'slots');
+            console.log('[ChatIA] Primer slot:', modalSlots.value[0]);
+            
+            // Abrir modal en lugar de mostrar mensaje
+            showAppointmentModal.value = true;
+          } else {
+            // No hay slots para esta especialidad
+            messages.value.push({ role: 'assistant', content: assistantMessage })
+          }
+        } else {
+          // No se pudo detectar especialidad
+          messages.value.push({ role: 'assistant', content: assistantMessage })
+        }
+      } else {
+        // Mostrar mensaje normal si no hay disponibilidad
+        messages.value.push({ role: 'assistant', content: assistantMessage })
+      }
       
       // Emitir evento si hubo cambios en las citas (usando flag del backend)
       if (assistantPayload.appointmentChanged === true) {
@@ -217,6 +315,28 @@ const sendMessage = async () => {
     isLoading.value = false
     await scrollToBottom()
   }
+}
+
+// Funciones para manejar el modal de selección de horarios
+const handleSlotConfirm = async (slot) => {
+  console.log('[ChatIA] Slot confirmado:', slot)
+  showAppointmentModal.value = false
+  
+  // Enviar confirmación con más detalles para asegurar que la IA entienda
+  userInput.value = `Confirmo la opción ${slot.index} (${slot.time}) para agendar mi cita de ${modalSpecialty.value}`
+  await sendMessage()
+}
+
+const handleModalCancel = async () => {
+  console.log('[ChatIA] Modal cancelado')
+  showAppointmentModal.value = false
+  
+  // La IA pregunta automáticamente
+  messages.value.push({
+    role: 'assistant',
+    content: '¿En qué más puedo ayudarte?'
+  })
+  await scrollToBottom()
 }
 
 // Función para configurar manualmente el userId
@@ -388,6 +508,18 @@ onMounted(async () => {
         </button>
       </form>
     </div>
+
+    <!-- Modal de Selección de Horarios -->
+    <AppointmentSelectorModal
+      :isOpen="showAppointmentModal"
+      :slots="modalSlots"
+      :specialty="modalSpecialty"
+      :professionalName="modalProfessional"
+      :dateRange="modalDateRange"
+      @confirm="handleSlotConfirm"
+      @cancel="handleModalCancel"
+      @close="showAppointmentModal = false"
+    />
   </div>
 </template>
 
