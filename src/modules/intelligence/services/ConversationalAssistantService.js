@@ -222,7 +222,7 @@ ${userContext.isProfessional ? `
           // Agregar el resultado de la función al contexto
           conversationHistory.push(
             { role: "user", content: userMessage },
-            { role: "assistant", content: assistantMessage.content, function_call: assistantMessage.function_call },
+            { role: "assistant", content: assistantMessage.content || '', function_call: assistantMessage.function_call },
             {
               role: "function",
               name: assistantMessage.function_call.name,
@@ -377,13 +377,14 @@ ${userContext.isProfessional ? `
       scheduleId: slot.scheduleId,
       professionalId: slot.professionalId,
       professionalName: slot.professional || 'Doctor',
-      startTime: new Date(slot.date_iso),
+      startTime_iso: slot.startTime_iso || slot.date_iso,  // Usar el string directamente
+      startTime: slot.startTime_iso || slot.date_iso,  // Para compatibilidad
       dateHuman: slot.date_human
     }));
 
     return {
       specialty: mentionedSpecialty,
-      freeSlots: freeSlots.slice(0, 48) // Máximo 3 opciones
+      freeSlots: freeSlots  // Mostrar TODOS los slots disponibles
     };
   }
 
@@ -644,7 +645,7 @@ ${userContext.isProfessional ? `
         const slots = fullAvailability[specialty];
         if (slots && Array.isArray(slots) && slots.length > 0) {
           info += `${specialty.toUpperCase()}: ${slots.length} horarios disponibles\n`;
-          slots.slice(0, 3).forEach((slot, idx) => {
+          slots.forEach((slot, idx) => {  // Mostrar TODOS los slots, no solo 3
             info += `  OPCION_${idx + 1}:\n`;
             info += `    SCHEDULE_ID: ${slot.scheduleId}\n`;
             info += `    START_TIME_ISO: ${slot.startTime_iso || slot.date_iso}\n`;
