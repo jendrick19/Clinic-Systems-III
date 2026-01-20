@@ -137,7 +137,7 @@
       </div>
 
       <!-- Próxima Cita Detail -->
-      <div v-if="nextAppointment && nextAppointment.startTime" class="mt-8 bg-white rounded-xl shadow-md p-6 border border-cyan-100">
+      <div v-if="nextAppointment && nextAppointment.fecha" class="mt-8 bg-white rounded-xl shadow-md p-6 border border-cyan-100">
         <h3 class="text-lg font-semibold text-slate-900 mb-4">Detalle de Próxima Cita</h3>
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
@@ -151,6 +151,10 @@
           <div>
             <p class="text-sm text-slate-500">Odontólogo</p>
             <p class="text-lg font-semibold text-slate-900">{{ nextAppointment.odontologo || 'Por asignar' }}</p>
+          </div>
+          <div>
+            <p class="text-sm text-slate-500">Especialidad</p>
+            <p class="text-lg font-semibold text-slate-900">{{ nextAppointment.especialidad || 'General' }}</p>
           </div>
           <div>
             <p class="text-sm text-slate-500">Estado</p>

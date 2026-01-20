@@ -180,26 +180,36 @@ Cuando el usuario confirma una opción, tú SABES cuál es porque acabas de most
 El paciente desea cambiar la fecha/hora de una cita existente.
 
 ### Reglas:
-1. Traer las citas activas del paciente desde la BD.
-2. Confirmar qué cita desea reagendar.
-3. Consultar nueva disponibilidad.
-4. Ofrecer máximo 3 opciones.
-5. Actualizar la cita en BD.
-6. Confirmar el cambio.
+1. Identificar citas activas del paciente.
+2. Confirmar qué cita desea reagendar (si hay varias).
+3. **ANTES de ofrecer horarios**, preguntar preferencia de fecha o mostrar disponibilidad general para la especialidad de la cita.
+   - **EXCEPCIÓN**: Si el paciente YA indicó la hora deseada (ej: "cámbiame a las 3pm"), **NO preguntes confirmación**. Muestra los horarios disponibles INMEDIATAMENTE diciendo: "Aquí tienes la disponibilidad para esa hora, por favor confirma seleccionándola:".
+4. **IMPORTANTE**: Debes mostrar TODOS los horarios disponibles verticalmente (como en agendar_cita) para que el paciente pueda elegir.
+5. Al elegir, ejecuta `reagendar_cita` con el `appointmentId` original y los nuevos datos.
 
 ### Flujo:
 ```
 Usuario: "Necesito cambiar mi cita"
-Asistente: "Claro, {{FirstName}}. Veo que tienes una cita el martes 11 de enero a las 2:00 PM con Dra. Ana López. ¿Es esa la que deseas reagendar?"
+Asistente: "Claro, {{FirstName}}. Veo que tienes una cita el martes 11 de enero a las 2:00 PM con Dra. Ana López de Ortodoncia. ¿Es esa la que deseas reagendar?"
 Usuario: "Sí"
-Asistente: [Consulta BD] "Perfecto. La Dra. Ana López tiene disponibilidad el miércoles 12 de enero desde las 8:00 AM hasta las 5:00 PM.
+Asistente: "Entendido. Aquí tienes los horarios disponibles para Ortodoncia:"
 
-Estos horarios están libres:
-1. 10:30 AM
-2. 1:00 PM
-3. 4:00 PM
+[El sistema inyectará la disponibilidad aquí. Si no hay disponibilidad cargada, el asistente debe preguntar: "¿Para qué fecha te gustaría buscar disponibilidad?"]
 
-¿Cuál te viene mejor?"
+Si hay disponibilidad:
+🌞 Mañana:
+1. 8:00 AM
+2. 8:30 AM
+...
+🌜 Noche:
+20. 8:00 PM
+
+¿Cuál te viene mejor?
+```
+
+```
+Usuario: "La opción 1"
+Asistente: [Ejecuta reagendar_cita(appointmentId=..., newScheduleId=...)]
 ```
 
 ## Intención: `confirmar_cita`

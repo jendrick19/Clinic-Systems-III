@@ -73,7 +73,7 @@ async function getDashboardStats(req, res) {
                 where: {
                     professionalId: professional.id,
                     startTime: { [Op.gte]: now },
-                    status: { [Op.notIn]: ['cancelada', 'no asistio'] }
+                    status: { [Op.notIn]: ['cancelada', 'no asistio', 'cumplida'] }
                 }
             });
 
@@ -92,7 +92,7 @@ async function getDashboardStats(req, res) {
                 where: {
                     professionalId: professional.id,
                     startTime: { [Op.gte]: now },
-                    status: { [Op.notIn]: ['cancelada', 'no asistio'] }
+                    status: { [Op.notIn]: ['cancelada', 'no asistio', 'cumplida'] }
                 },
                 order: [['startTime', 'ASC']]
             });
@@ -129,7 +129,7 @@ async function getDashboardStats(req, res) {
                 where: {
                     professionalId: professional.id,
                     startTime: { [Op.gte]: now },
-                    status: { [Op.notIn]: ['cancelada', 'no asistio'] }
+                    status: { [Op.notIn]: ['cancelada', 'no asistio', 'cumplida'] }
                 },
                 order: [['startTime', 'ASC']],
                 limit: 10  // Limitar a las próximas 10 citas
@@ -181,7 +181,7 @@ async function getDashboardStats(req, res) {
                 where: {
                     peopleId: patient.id,
                     startTime: { [Op.gte]: now },
-                    status: { [Op.notIn]: ['cancelada', 'no asistio'] }
+                    status: { [Op.notIn]: ['cancelada', 'no asistio', 'cumplida', 'completada'] }
                 }
             });
 
@@ -190,7 +190,7 @@ async function getDashboardStats(req, res) {
                 where: {
                     peopleId: patient.id,
                     startTime: { [Op.lt]: now },
-                    status: 'completada'
+                    status: { [Op.in]: ['cumplida', 'completada'] }
                 }
             });
 
@@ -199,7 +199,7 @@ async function getDashboardStats(req, res) {
                 where: {
                     peopleId: patient.id,
                     startTime: { [Op.gte]: now },
-                    status: { [Op.notIn]: ['cancelada', 'no asistio'] }
+                    status: { [Op.notIn]: ['cancelada', 'no asistio', 'cumplida', 'completada'] }
                 },
                 include: [{
                     model: db.Professional,
@@ -255,39 +255,39 @@ async function getDashboardStats(req, res) {
 // --- CORRECCIÓN DEFINITIVA DE ZONA HORARIA ---
 
 const formatFechaUTC = (dateInput) => {
-  if (!dateInput) return '---';
-  
-  // TRUCO: Si es texto "2026-01-19 08:00:00", le agregamos 'Z' al final
-  // Esto obliga a Javascript a entender que SON las 8:00 UTC, no las 8:00 Venezuela.
-  let dateStr = String(dateInput);
-  if (!dateStr.endsWith('Z')) dateStr += 'Z';
-  
-  const d = new Date(dateStr);
-  
-  // Ahora getUTC* leerá el número exacto
-  const day = String(d.getUTCDate()).padStart(2, '0');
-  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const year = d.getUTCFullYear();
-  return `${day}/${month}/${year}`;
+    if (!dateInput) return '---';
+
+    // TRUCO: Si es texto "2026-01-19 08:00:00", le agregamos 'Z' al final
+    // Esto obliga a Javascript a entender que SON las 8:00 UTC, no las 8:00 Venezuela.
+    let dateStr = String(dateInput);
+    if (!dateStr.endsWith('Z')) dateStr += 'Z';
+
+    const d = new Date(dateStr);
+
+    // Ahora getUTC* leerá el número exacto
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const year = d.getUTCFullYear();
+    return `${day}/${month}/${year}`;
 };
 
 const formatHoraUTC = (dateInput) => {
-  if (!dateInput) return '--:--';
-  
-  // TRUCO: Forzar interpretación como UTC agregando 'Z'
-  let dateStr = String(dateInput);
-  if (!dateStr.endsWith('Z')) dateStr += 'Z';
-  
-  const d = new Date(dateStr);
-  
-  let hours = d.getUTCHours(); // Si era 08:00Z, esto devuelve 8
-  const minutes = String(d.getUTCMinutes()).padStart(2, '0');
-  const ampm = hours >= 12 ? 'PM' : 'AM';
-  
-  hours = hours % 12;
-  hours = hours ? hours : 12;
-  
-  return `${hours}:${minutes} ${ampm}`;
+    if (!dateInput) return '--:--';
+
+    // TRUCO: Forzar interpretación como UTC agregando 'Z'
+    let dateStr = String(dateInput);
+    if (!dateStr.endsWith('Z')) dateStr += 'Z';
+
+    const d = new Date(dateStr);
+
+    let hours = d.getUTCHours(); // Si era 08:00Z, esto devuelve 8
+    const minutes = String(d.getUTCMinutes()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+
+    return `${hours}:${minutes} ${ampm}`;
 };
 module.exports = {
     getDashboardStats

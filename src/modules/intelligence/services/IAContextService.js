@@ -69,7 +69,7 @@ async function initializeIAContext(userId, entityId) {
         appointments = await db.Appointment.findAll({
           where: {
             professionalId: professional.id,
-            status: { [Op.notIn]: ['no asistio', 'cancelada'] },
+            status: { [Op.notIn]: ['no asistio', 'cancelada', 'cumplida', 'completada'] },
             startTime: { [Op.gte]: today }
           },
           include: [
@@ -85,7 +85,7 @@ async function initializeIAContext(userId, entityId) {
         appointments = await db.Appointment.findAll({
           where: {
             professionalId: professional.id,
-            status: { [Op.notIn]: ['no asistio', 'cancelada'] },
+            status: { [Op.notIn]: ['no asistio', 'cancelada', 'cumplida', 'completada'] },
             startTime: { [Op.gte]: today }
           },
           order: [['startTime', 'ASC']]
@@ -107,7 +107,7 @@ async function initializeIAContext(userId, entityId) {
       appointments = await db.Appointment.findAll({
         where: {
           peopleId: patient.id,
-          status: { [Op.notIn]: ['no asistio', 'cancelada'] }
+          status: { [Op.notIn]: ['no asistio', 'cancelada', 'cumplida', 'completada'] }
         },
         include: [
           {

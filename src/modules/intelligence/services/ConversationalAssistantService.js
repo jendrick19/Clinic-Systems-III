@@ -87,13 +87,14 @@ class ConversationalAssistantService {
         // Extraer disponibilidad del contexto precargado basándose en la especialidad mencionada
         availabilityContext = this._extractAvailabilityFromPreloaded(
           userMessage,
-          convoState.initialContext.availability
+          convoState.initialContext.availability,
+          userContext
         );
       } else {
         // Solo si NO hay contexto precargado, hacer consultas
         console.log('[ChatIA] No hay contexto precargado, consultando BD para usuario', userId);
         userContext = await this._getUserContext(userId, patientId);
-        availabilityContext = await this._getAvailabilityContext(userMessage);
+        availabilityContext = await this._getAvailabilityContext(userMessage, userContext);
       }
 
       // 4. Guardar las opciones disponibles en el estado de la conversación
@@ -205,7 +206,8 @@ ${userContext.isProfessional ? `
         actionResult = await this._executeFunctionCall(
           assistantMessage.function_call,
           userId,
-          patientId
+          patientId,
+          userContext.isProfessional ? 'professional' : 'patient'
         );
 
         console.log(`[ChatIA] Resultado de función:`, JSON.stringify(actionResult, null, 2));
@@ -282,7 +284,7 @@ ${userContext.isProfessional ? `
         action: assistantMessage.function_call?.name || null,
         actionResult: actionResult,
         requiresConfirmation: this._requiresConfirmation(assistantMessage.function_call?.name),
-        appointmentChanged: ['agendar_cita', 'cancelar_cita', 'reagendar_cita'].includes(assistantMessage.function_call?.name) && actionResult?.success,
+        appointmentChanged: ['agendar_cita', 'cancelar_cita', 'reagendar_cita', 'confirmar_cita', 'completar_cita'].includes(assistantMessage.function_call?.name) && actionResult?.success,
         fullAvailability: fullAvailability  // Agregar disponibilidad completa para el modal
       };
 
@@ -337,7 +339,7 @@ ${userContext.isProfessional ? `
    * @param {Object} preloadedAvailability - Disponibilidad precargada { especialidad: [slots] }
    * @returns {Object|null} Contexto de disponibilidad en formato esperado
    */
-  _extractAvailabilityFromPreloaded(userMessage, preloadedAvailability) {
+  _extractAvailabilityFromPreloaded(userMessage, preloadedAvailability, userContext = null) {
     if (!preloadedAvailability) {
       console.log('[ChatIA] No hay disponibilidad precargada');
       return null;
@@ -355,23 +357,40 @@ ${userContext.isProfessional ? `
       lowerMessage.includes(s.toLowerCase())
     );
 
-    if (!mentionedSpecialty) {
-      console.log('[ChatIA] No se detectó especialidad en el mensaje');
+    let finalSpecialty = mentionedSpecialty;
+
+    // Si no se menciona especialidad, pero el usuario es profesional, usar su propia especialidad
+    if (!finalSpecialty && userContext && userContext.isProfessional && userContext.userData?.specialty) {
+      console.log('[ChatIA] Usando especialidad del doctor:', userContext.userData.specialty);
+      // Intentar normalizar o buscar coincidencia flexible
+      const docSpecialty = userContext.userData.specialty.toLowerCase();
+      // Buscar si alguna key de preloadedAvailability coincide parcialmente
+      if (preloadedAvailability) {
+        const key = Object.keys(preloadedAvailability).find(k => k.toLowerCase().includes(docSpecialty) || docSpecialty.includes(k.toLowerCase()));
+        if (key) finalSpecialty = key;
+        else finalSpecialty = userContext.userData.specialty;
+      } else {
+        finalSpecialty = userContext.userData.specialty;
+      }
+    }
+
+    if (!finalSpecialty) {
+      console.log('[ChatIA] No se detectó especialidad en el mensaje ni por contexto de doctor');
       return null;
     }
 
     // Buscar en la disponibilidad precargada
-    const slots = preloadedAvailability[mentionedSpecialty];
+    const slots = preloadedAvailability[finalSpecialty] || preloadedAvailability[Object.keys(preloadedAvailability).find(k => k.toLowerCase() === finalSpecialty.toLowerCase())];
 
     if (!slots || slots.length === 0) {
-      console.log(`[ChatIA] No hay slots disponibles para ${mentionedSpecialty}`);
+      console.log(`[ChatIA] No hay slots disponibles para ${finalSpecialty}`);
       return {
-        specialty: mentionedSpecialty,
+        specialty: finalSpecialty,
         freeSlots: []
       };
     }
 
-    console.log(`[ChatIA] Encontrados ${slots.length} slots precargados para ${mentionedSpecialty}`);
+    console.log(`[ChatIA] Encontrados ${slots.length} slots precargados para ${finalSpecialty}`);
 
     // Convertir formato del contexto precargado al formato esperado
     const freeSlots = slots.map(slot => ({
@@ -384,7 +403,7 @@ ${userContext.isProfessional ? `
     }));
 
     return {
-      specialty: mentionedSpecialty,
+      specialty: finalSpecialty,
       freeSlots: freeSlots  // Mostrar TODOS los slots disponibles
     };
   }
@@ -392,7 +411,7 @@ ${userContext.isProfessional ? `
   /**
    * Obtiene contexto de disponibilidad si el usuario menciona especialidad
    */
-  async _getAvailabilityContext(userMessage) {
+  async _getAvailabilityContext(userMessage, userContext = null) {
     const lowerMessage = userMessage.toLowerCase();
 
     const KNOWN_SPECIALTIES = [
@@ -400,9 +419,15 @@ ${userContext.isProfessional ? `
       'odontopediatría', 'cirugía oral', 'prótesis', 'implantología', 'estética'
     ];
 
-    const mentionedSpecialty = KNOWN_SPECIALTIES.find(s =>
+    let mentionedSpecialty = KNOWN_SPECIALTIES.find(s =>
       lowerMessage.includes(s.toLowerCase())
     );
+
+    // Si es profesional y no menciona especialidad, usar la suya
+    if (!mentionedSpecialty && userContext && userContext.isProfessional && userContext.userData?.specialty) {
+      console.log('[getAvailability] User es profesional, usando su especialidad por defecto:', userContext.userData.specialty);
+      mentionedSpecialty = userContext.userData.specialty;
+    }
 
     if (!mentionedSpecialty) return null;
 
@@ -783,6 +808,17 @@ ${userContext.isProfessional ? `
           },
           required: ["docType", "docNumber", "firstName", "lastName"]
         }
+      },
+      {
+        name: "completar_cita",
+        description: "Marca una cita como completada/cumplida. Solo para el doctor.",
+        parameters: {
+          type: "object",
+          properties: {
+            appointmentId: { type: "integer", description: "ID de la cita a completar" }
+          },
+          required: ["appointmentId"]
+        }
       }
     ];
   }
@@ -790,31 +826,34 @@ ${userContext.isProfessional ? `
   /**
    * Ejecuta la función llamada por el asistente
    */
-  async _executeFunctionCall(functionCall, userId, patientId) {
+  async _executeFunctionCall(functionCall, userId, patientId, role = 'patient') {
     const functionName = functionCall.name;
     const args = JSON.parse(functionCall.arguments);
 
-    console.log(`[Function Call] ${functionName} con args:`, args);
+    console.log(`[Function Call] ${functionName} con args:`, args, `(Role: ${role})`);
 
     try {
       switch (functionName) {
         case "agendar_cita":
-          return await this._agendarCita(patientId, args, userId);
+          return await this._agendarCita(patientId, args, userId, role);
 
         case "confirmar_cita":
-          return await this._confirmarCita(patientId, args, userId);
+          return await this._confirmarCita(patientId, args, userId, role);
+
+        case "completar_cita":
+          return await this._completarCita(patientId, args, userId, role);
 
         case "reagendar_cita":
-          return await this._reagendarCita(patientId, args, userId);
+          return await this._reagendarCita(patientId, args, userId, role);
 
         case "cancelar_cita":
-          return await this._cancelarCita(patientId, args, userId);
+          return await this._cancelarCita(patientId, args, userId, role);
 
         case "consultar_citas":
-          return await this._consultarCitas(patientId, userId);
+          return await this._consultarCitas(patientId, userId, role);
 
         case "consultar_mi_agenda":
-          return await this._consultarAgendaDoctor(patientId);
+          return await this._consultarAgendaDoctor(patientId); // Este es exclusivo de doctores
 
         case "consultar_citas_por_documento":
           return await this._consultarCitasPorDocumento(args);
@@ -1225,18 +1264,22 @@ ${userContext.isProfessional ? `
   /**
    * Confirma una cita existente (cambia de estado 'solicitada' a 'confirmada')
    */
-  async _confirmarCita(patientId, args) {
+  async _confirmarCita(patientId, args, userId = null, role = 'patient') {
     const { appointmentId } = args;
 
     try {
-      console.log(`[_confirmarCita] Intentando confirmar cita ID=${appointmentId} para patientId=${patientId}`);
+      console.log(`[_confirmarCita] Intentando confirmar cita ID=${appointmentId} para entityId=${patientId} (Role: ${role})`);
 
-      // Verificar que la cita existe y pertenece al paciente
+      // 1. Verificar que la cita existe y pertenece al usuario (paciente o doctor)
+      const query = { id: appointmentId };
+      if (role === 'patient') {
+        query.peopleId = patientId;
+      } else if (role === 'professional') {
+        query.professionalId = patientId;
+      }
+
       const appointment = await db.Appointment.findOne({
-        where: {
-          id: appointmentId,
-          peopleId: patientId
-        },
+        where: query,
         include: [
           {
             model: db.Professional,
@@ -1249,7 +1292,7 @@ ${userContext.isProfessional ? `
       if (!appointment) {
         return {
           success: false,
-          message: "Cita no encontrada o no pertenece al paciente"
+          message: "Cita no encontrada o no tienes permiso para confirmarla"
         };
       }
 
@@ -1310,18 +1353,81 @@ ${userContext.isProfessional ? `
   }
 
   /**
+   * Marca una cita como completada (cumplida)
+   * Solo para Profesionales
+   */
+  async _completarCita(entityId, args, userId = null, role = 'professional') {
+    const { appointmentId } = args;
+
+    try {
+      console.log(`[_completarCita] Intentando completar cita ID=${appointmentId} para entityId=${entityId}`);
+
+      // Solo profesionales pueden completar citas
+      if (role !== 'professional') {
+        return { success: false, message: "Solo los doctores pueden marcar citas como completadas." };
+      }
+
+      const appointment = await db.Appointment.findOne({
+        where: { id: appointmentId, professionalId: entityId },
+        include: [{ model: db.modules.operative.PeopleAttended, as: 'peopleAttended' }]
+      });
+
+      if (!appointment) {
+        return { success: false, message: "Cita no encontrada en tu agenda." };
+      }
+
+      if (['cancelada', 'no asistio'].includes(appointment.status)) {
+        return { success: false, message: `No se puede completar una cita en estado '${appointment.status}'.` };
+      }
+
+      const previousStatus = appointment.status;
+      appointment.status = 'cumplida';
+      await appointment.save();
+
+      // Historial
+      await db.AppointmentHistory.create({
+        appointmentId: appointment.id,
+        oldStatus: previousStatus,
+        newStatus: 'cumplida',
+        changeReason: 'Cita marcada como cumplida por doctor',
+        changedAt: new Date()
+      });
+
+      return {
+        success: true,
+        message: "Cita marcada como completada exitosamente.",
+        appointmentId: appointment.id,
+        appointment: {
+          id: appointment.id,
+          status: 'cumplida',
+          patient: appointment.peopleAttended ? `${appointment.peopleAttended.names} ${appointment.peopleAttended.surNames}` : 'Paciente',
+          date: formatDateWithoutTimezone(getUTCDateFromSequelize(appointment.startTime))
+        }
+      };
+
+    } catch (error) {
+      console.error('[_completarCita ERROR]:', error);
+      return { success: false, message: "Error al completar la cita", error: error.message };
+    }
+  }
+
+  /**
    * Reagenda una cita existente con validaciones completas
    */
-  async _reagendarCita(patientId, args) {
+  async _reagendarCita(patientId, args, userId = null, role = 'patient') {
     const { appointmentId, newScheduleId, newStartTime } = args;
 
     try {
-      // 1. Verificar que la cita pertenece al paciente
+      // 1. Verificar que la cita existe y pertenece al usuario (paciente o doctor)
+      const query = { id: appointmentId };
+      if (role === 'patient') {
+        query.peopleId = patientId;
+      } else if (role === 'professional') {
+        query.professionalId = patientId; // Si es Dr., patientId es su professionalId
+      }
+
       const appointment = await db.Appointment.findOne({
-        where: {
-          id: appointmentId,
-          peopleId: patientId
-        },
+        where: query,
         include: [
           {
             model: db.Professional,
@@ -1364,42 +1470,71 @@ ${userContext.isProfessional ? `
         };
       }
 
-      const requestedStartTime = getUTCDateFromSequelize(newStartTime);
-      const SLOT_DURATION = 30; // minutos
-      const requestedEndTime = new Date(requestedStartTime.getTime() + SLOT_DURATION * 60000);
+      // Helpers de formato (mismos que en _agendarCita)
+      const toMySQLFormat = (isoString) => {
+        // Extraer fecha y hora del ISO string o MySQL string
+        const match = String(isoString).match(/(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2}):?(\d{2})?/);
+        if (match) {
+          // Si viene sin segundos, asumir 00
+          const seconds = match[6] || '00';
+          return `${match[1]}-${match[2]}-${match[3]} ${match[4]}:${match[5]}:${seconds}`;
+        }
+        return String(isoString);
+      };
+
+      const calculateEndTime = (startTimeISO) => {
+        const match = String(startTimeISO).match(/(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})/);
+        if (match) {
+          const [, year, month, day, hours, minutes] = match;
+          let endHour = parseInt(hours);
+          let endMin = parseInt(minutes) + 30;
+          if (endMin >= 60) {
+            endHour += 1;
+            endMin -= 60;
+          }
+          return `${year}-${month}-${day} ${String(endHour).padStart(2, '0')}:${String(endMin).padStart(2, '0')}:00`;
+        }
+        return startTimeISO;
+      };
+
+      const startTimeMySQL = toMySQLFormat(newStartTime);
+      const endTimeMySQL = calculateEndTime(newStartTime);
+
+      console.log('[_reagendarCita] Tiempos corregidos:', { startTimeMySQL, endTimeMySQL });
 
       // 5. Verificar que el horario solicitado está dentro del rango del Schedule
-      const scheduleStart = getUTCDateFromSequelize(newSchedule.startTime);
-      const scheduleEnd = getUTCDateFromSequelize(newSchedule.endTime);
+      // Convertir schedule times a string MySQL para comparar strings
+      const scheduleStartMySQL = toMySQLFormat(newSchedule.startTime);
+      const scheduleEndMySQL = toMySQLFormat(newSchedule.endTime);
 
-      if (requestedStartTime < scheduleStart || requestedEndTime > scheduleEnd) {
+      if (startTimeMySQL < scheduleStartMySQL || endTimeMySQL > scheduleEndMySQL) {
         return {
           success: false,
           message: `El nuevo horario está fuera del rango de la agenda disponible`
         };
       }
 
-      // 6. Verificar solapamientos con otras citas del paciente (excluyendo esta cita)
+      // 6. Verificar solapamientos (pasar strings MySQL)
       const patientOverlap = await this._checkPatientAppointmentOverlap(
         patientId,
-        requestedStartTime,
-        requestedEndTime,
-        appointmentId // Excluir esta cita de la verificación
+        startTimeMySQL,
+        endTimeMySQL,
+        appointmentId
       );
 
       if (patientOverlap) {
         return {
           success: false,
-          message: `Ya tienes una cita en este horario: ${formatDateWithoutTimezone(getUTCDateFromSequelize(patientOverlap.startTime))} con ${patientOverlap.professionalName}`
+          message: `Ya tienes una cita en este horario: ${patientOverlap.dateHuman} con ${patientOverlap.professionalName}`
         };
       }
 
-      // 7. Verificar solapamientos con otras citas del profesional
+      // 7. Verificar solapamientos profesional
       const professionalOverlap = await this._checkProfessionalAppointmentOverlap(
         newSchedule.professionalId,
-        requestedStartTime,
-        requestedEndTime,
-        appointmentId // Excluir esta cita de la verificación
+        startTimeMySQL,
+        endTimeMySQL,
+        appointmentId
       );
 
       if (professionalOverlap) {
@@ -1433,8 +1568,8 @@ ${userContext.isProfessional ? `
       appointment.scheduleId = newScheduleId;
       appointment.professionalId = newSchedule.professionalId;
       appointment.unitId = finalUnitId;
-      appointment.startTime = requestedStartTime;
-      appointment.endTime = requestedEndTime;
+      appointment.startTime = startTimeMySQL;
+      appointment.endTime = endTimeMySQL;
       await appointment.save();
 
       // 10. Crear registro en el historial
@@ -1443,9 +1578,9 @@ ${userContext.isProfessional ? `
         oldStatus: appointment.status,
         newStatus: appointment.status,
         oldStartTime: oldStartTime,
-        newStartTime: requestedStartTime,
+        newStartTime: startTimeMySQL,
         oldEndTime: oldEndTime,
-        newEndTime: requestedEndTime,
+        newEndTime: endTimeMySQL,
         changeReason: 'Cita reagendada por asistente virtual',
         changedAt: new Date()
       });
@@ -1453,7 +1588,8 @@ ${userContext.isProfessional ? `
       console.log(`[_reagendarCita] ✅ Cita ID=${appointment.id} reagendada exitosamente`);
 
       // Refrescar el contexto de la IA con las citas actualizadas
-      await this._refreshUserContext(null, patientId);
+      console.log(`[ChatIA _reagendarCita] Iniciando actualización de contexto para userId=${userId || 'N/A'}, patientId=${patientId}`);
+      await this._refreshUserContext(userId, patientId);
 
       return {
         success: true,
@@ -1462,7 +1598,7 @@ ${userContext.isProfessional ? `
         appointment: {
           id: appointment.id,
           oldDateTime: formatDateWithoutTimezone(getUTCDateFromSequelize(oldStartTime)),
-          newDateTime: formatDateWithoutTimezone(requestedStartTime),
+          newDateTime: formatDateWithoutTimezone(startTimeMySQL),
           professional: newSchedule.professional ?
             `${newSchedule.professional.names} ${newSchedule.professional.surNames}` : null,
           specialty: newSchedule.professional?.specialty || null
@@ -1845,7 +1981,7 @@ ${userContext.isProfessional ? `
         where: {
           peopleId: patient.id,
           // CORRECCIÓN CRÍTICA: Usar Op.notIn en lugar de Op.ne para arrays
-          status: { [Op.notIn]: ['no asistio', 'cancelada'] }
+          status: { [Op.notIn]: ['no asistio', 'cancelada', 'cumplida', 'completada'] }
         },
         include: [
           {
@@ -1972,6 +2108,14 @@ function formatDateHumanWithoutTimezone(date) {
   const weekdays = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
   const months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
+  // Helper para formato 12h
+  const to12h = (hoursStr, minutesStr) => {
+    const h = parseInt(hoursStr, 10);
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const h12 = h % 12 || 12;
+    return `${h12}:${minutesStr} ${ampm}`;
+  };
+
   // SOLUCIÓN: Intentar extraer del string primero
   const str = String(date);
 
@@ -1982,7 +2126,7 @@ function formatDateHumanWithoutTimezone(date) {
     const dateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
     const weekday = weekdays[dateObj.getDay()];
     const monthName = months[parseInt(month) - 1];
-    return `${weekday} ${parseInt(day)} de ${monthName}, ${hours}:${minutes}`;
+    return `${weekday} ${parseInt(day)} de ${monthName}, ${to12h(hours, minutes)}`;
   }
 
   // Formato ISO: "2026-01-25T12:00:00-04:00"
@@ -1992,7 +2136,7 @@ function formatDateHumanWithoutTimezone(date) {
     const dateObj = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
     const weekday = weekdays[dateObj.getDay()];
     const monthName = months[parseInt(month) - 1];
-    return `${weekday} ${parseInt(day)} de ${monthName}, ${hours}:${minutes}`;
+    return `${weekday} ${parseInt(day)} de ${monthName}, ${to12h(hours, minutes)}`;
   }
 
   // Fallback: usar objeto Date
@@ -2002,7 +2146,7 @@ function formatDateHumanWithoutTimezone(date) {
   const hours = String(date.getUTCHours()).padStart(2, '0');
   const minutes = String(date.getUTCMinutes()).padStart(2, '0');
 
-  return `${weekday} ${day} de ${month}, ${hours}:${minutes}`;
+  return `${weekday} ${day} de ${month}, ${to12h(hours, minutes)}`;
 }
 
 module.exports = new ConversationalAssistantService();
