@@ -269,15 +269,34 @@ const sendMessage = async () => {
             });
             
             modalSpecialty.value = detectedSpecialty;
-            modalProfessional.value = slots[0]?.professional || 'Profesional';
+            
+            // Verificar si hay múltiples profesionales
+            const uniqueProfessionals = [...new Set(slots.map(s => s.professional).filter(Boolean))];
+            if (uniqueProfessionals.length > 1) {
+              modalProfessional.value = 'Seleccione un Profesional';
+            } else {
+              modalProfessional.value = slots[0]?.professional || 'Profesional';
+            }
             modalScheduleId.value = slots[0]?.scheduleId;
             
-            // Extraer rango de fechas del primer y último slot
+            // Mostrar solo la fecha (ej: "Lunes 20 de Enero") sin el rango de horas
             const firstSlot = slots[0];
-            const lastSlot = slots[slots.length - 1];
-            const firstTime = firstSlot.startTime_human?.split(' ')[1] || '';
-            const lastTime = lastSlot.endTime_human?.split(' ')[1] || '';
-            modalDateRange.value = `${firstTime} - ${lastTime}`;
+            let dateDisplay = '';
+            
+            // Intentar obtener fecha legible
+            const rawDate = firstSlot.date_human || firstSlot.startTime_human || '';
+            
+            if (rawDate.includes(',')) {
+              // Formato "Lunes 15 de enero, 08:00 AM" -> "Lunes 15 de enero"
+              dateDisplay = rawDate.split(',')[0];
+            } else if (rawDate.includes(' ')) {
+              // Formato simple "DD/MM/YYYY HH:MM" -> "DD/MM/YYYY"
+              dateDisplay = rawDate.split(' ')[0]; 
+            } else {
+              dateDisplay = rawDate;
+            }
+            
+            modalDateRange.value = dateDisplay;
             
             console.log('[ChatIA] Abriendo modal con', slots.length, 'slots');
             console.log('[ChatIA] Primer slot:', modalSlots.value[0]);

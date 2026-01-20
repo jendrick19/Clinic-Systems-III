@@ -5,7 +5,7 @@
       <div class="modal-header">
         <div>
           <h2>📅 Selecciona tu horario</h2>
-          <p class="subtitle">{{ specialty }} - {{ professionalName }}</p>
+          <p class="subtitle">{{ specialty }} <span v-if="!hasMultipleProfessionals">- {{ currentProfessionalName }}</span></p>
           <p class="date-range">{{ dateRange }}</p>
         </div>
         <button class="close-btn" @click="handleCancel" aria-label="Cerrar">
@@ -15,8 +15,27 @@
         </button>
       </div>
 
+      <!-- Professional Selector (if multiple) -->
+      <div v-if="hasMultipleProfessionals" class="professional-selector">
+        <span class="selector-label">Profesional:</span>
+        <div class="chips-container">
+          <button 
+            v-for="prof in uniqueProfessionals" 
+            :key="prof"
+            class="chip-btn"
+            :class="{ active: selectedProfessional === prof }"
+            @click="selectedProfessional = prof"
+          >
+            {{ prof }}
+          </button>
+        </div>
+      </div>
+
       <!-- Time Slots Grid -->
       <div class="modal-body">
+        <div v-if="timeBlocks.length === 0" class="no-slots-message">
+          No hay horarios disponibles para este profesional.
+        </div>
         <div v-for="block in timeBlocks" :key="block.label" class="time-block">
           <h3 class="block-label">
             <span class="icon">{{ block.icon }}</span>
@@ -32,6 +51,7 @@
             >
               <span class="slot-number">{{ slot.index }}</span>
               <span class="slot-time">{{ slot.time }}</span>
+              <!-- Show professional name only if not filtered (fallback) or arguably redundant now -->
             </button>
           </div>
         </div>
@@ -74,10 +94,53 @@ const props = defineProps({
 const emit = defineEmits(['confirm', 'cancel', 'close']);
 
 const selectedSlot = ref(null);
+const selectedProfessional = ref('');
+
+// Computed for unique professionals
+const uniqueProfessionals = computed(() => {
+  if (!props.slots) return [];
+  const profs = new Set(props.slots.map(s => s.professional).filter(Boolean));
+  return Array.from(profs).sort();
+});
+
+const hasMultipleProfessionals = computed(() => uniqueProfessionals.value.length > 1);
+
+const currentProfessionalName = computed(() => {
+  return hasMultipleProfessionals.value ? selectedProfessional.value : props.professionalName;
+});
+
+// Set default professional when slots change
+watch(() => props.slots, (newSlots) => {
+  if (newSlots && uniqueProfessionals.value.length > 0) {
+    // If current selection is not in the new list, select the first one
+    if (!uniqueProfessionals.value.includes(selectedProfessional.value)) {
+      selectedProfessional.value = uniqueProfessionals.value[0];
+    }
+  }
+}, { immediate: true });
+
+// Also watch isOpen to reset or re-init if needed
+watch(() => props.isOpen, (newVal) => {
+  if (!newVal) {
+    selectedSlot.value = null;
+    selectedProfessional.value = '';
+  } else {
+    // Initialize if empty
+    if (!selectedProfessional.value && uniqueProfessionals.value.length > 0) {
+      selectedProfessional.value = uniqueProfessionals.value[0];
+    }
+  }
+});
 
 // Agrupar slots por bloques de tiempo
 const timeBlocks = computed(() => {
   if (!props.slots || props.slots.length === 0) return [];
+
+  // Filter by selected professional if multiple exist
+  let filteredSlots = props.slots;
+  if (hasMultipleProfessionals.value && selectedProfessional.value) {
+    filteredSlots = props.slots.filter(s => s.professional === selectedProfessional.value);
+  }
 
   const blocks = {
     morning: { label: 'Mañana', icon: '🌅', slots: [] },
@@ -85,14 +148,16 @@ const timeBlocks = computed(() => {
     evening: { label: 'Noche', icon: '🌙', slots: [] }
   };
 
-  props.slots.forEach((slot, index) => {
+  filteredSlots.forEach((slot, index) => {
     const hour = parseInt(slot.time.split(':')[0]);
     const isPM = slot.time.includes('PM');
     const hour24 = isPM && hour !== 12 ? hour + 12 : (!isPM && hour === 12 ? 0 : hour);
 
     const slotData = {
       ...slot,
-      index: index + 1
+      // Keep original index or re-index? 
+      // Keeping original index is safer for referencing back if needed, but UI might look weird if numbers skip.
+      // Let's keep original index for consistency with the backend list.
     };
 
     if (hour24 < 12) {
@@ -110,6 +175,7 @@ const timeBlocks = computed(() => {
 
 const selectSlot = (slot) => {
   selectedSlot.value = slot;
+  // Ensure the slot has the professional context if needed
 };
 
 const handleConfirm = () => {
@@ -121,16 +187,10 @@ const handleConfirm = () => {
 
 const handleCancel = () => {
   selectedSlot.value = null;
+  // Don't clear selectedProfessional here to persist selection if they reopen? No, standard behavior is reset.
   emit('cancel');
   emit('close');
 };
-
-// Reset selection when modal closes
-watch(() => props.isOpen, (newVal) => {
-  if (!newVal) {
-    selectedSlot.value = null;
-  }
-});
 </script>
 
 <style scoped>
@@ -150,12 +210,8 @@ watch(() => props.isOpen, (newVal) => {
 }
 
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .modal-container {
@@ -171,14 +227,8 @@ watch(() => props.isOpen, (newVal) => {
 }
 
 @keyframes slideUp {
-  from {
-    transform: translateY(30px);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
+  from { transform: translateY(30px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
 }
 
 .modal-header {
@@ -209,6 +259,53 @@ watch(() => props.isOpen, (newVal) => {
   color: #6b7280;
 }
 
+/* Professional Selector Styles */
+.professional-selector {
+  padding: 16px 28px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.selector-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.chips-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.chip-btn {
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 14px;
+  color: #4b5563;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-weight: 500;
+}
+
+.chip-btn:hover {
+  background: #e5e7eb;
+  transform: translateY(-1px);
+}
+
+.chip-btn.active {
+  background: #eff6ff;
+  border-color: #6366f1;
+  color: #6366f1;
+  font-weight: 600;
+  box-shadow: 0 2px 4px rgba(99, 102, 241, 0.1);
+}
+
 .close-btn {
   background: #f3f4f6;
   border: none;
@@ -232,6 +329,13 @@ watch(() => props.isOpen, (newVal) => {
   padding: 20px 28px;
   overflow-y: auto;
   flex: 1;
+}
+
+.no-slots-message {
+  text-align: center;
+  color: #6b7280;
+  padding: 20px;
+  font-style: italic;
 }
 
 .time-block {
@@ -305,6 +409,8 @@ watch(() => props.isOpen, (newVal) => {
   font-size: 15px;
   font-weight: 600;
 }
+
+/* Removed individual slot-doc-name as it causes clutter with the main selector */
 
 .modal-footer {
   padding: 20px 28px;

@@ -233,6 +233,26 @@ ${userContext.isProfessional ? `
           );
 
           // Reconstruir contexto actualizado después de la acción
+          // CRÍTICO: Refrescar el contexto en memoria para que la IA sepa que la cita ya no existe (o existe la nueva)
+          if (['agendar_cita', 'cancelar_cita', 'reagendar_cita', 'confirmar_cita', 'completar_cita'].includes(assistantMessage.function_call.name)) {
+            console.log('[ChatIA] Refrescando contexto de usuario tras acción exitosa...');
+            await this._refreshUserContext(userId, patientId);
+
+            // Recargar userContext desde el estado actualizado
+            const updatedState = this.conversationState.get(conversationKey);
+            if (updatedState && updatedState.initialContext) {
+              userContext = {
+                role: updatedState.initialContext.role || 'patient',
+                isProfessional: userContext.isProfessional || false,
+                userData: updatedState.initialContext.userData,
+                patient: updatedState.initialContext.patient,
+                appointments: updatedState.initialContext.appointments || [],
+                schedules: updatedState.initialContext.schedules || []
+              };
+              console.log('[ChatIA] Contexto recargado. Citas activas:', userContext.appointments.length);
+            }
+          }
+
           const updatedContext = this._buildContextualInfo(userContext, availabilityContext, fullAvailability, convoState.lastShownOptions);
 
           // Hacer una segunda llamada a OpenAI para generar respuesta apropiada
@@ -311,7 +331,7 @@ ${userContext.isProfessional ? `
       const appointments = await db.Appointment.findAll({
         where: {
           peopleId: patientId,
-          status: { [Op.ne]: 'cancelada' }
+          status: { [Op.notIn]: ['no asistio', 'cancelada', 'cumplida', 'completada', 'Cancelada'] }
         },
         include: [
           {
@@ -625,14 +645,61 @@ ${userContext.isProfessional ? `
       const slots = availabilityContext.freeSlots;
 
       // Lógica para mostrar rango correcto (ej. si cierra a las 3pm, el último turno es 2:30pm)
-      if (slots.length > 0) {
-        const firstSlot = slots[0];
-        const lastSlot = slots[slots.length - 1];
-        info += `\nRESUMEN_AGENDA:\n`;
-        info += `  - PRIMER_TURNO_DISPONIBLE: ${firstSlot.dateHuman}\n`;
-        info += `  - ÚLTIMO_TURNO_DISPONIBLE: ${lastSlot.dateHuman}\n`;
-        info += `  (Dile al usuario que tienes turnos desde ${firstSlot.dateHuman.split(',')[1]} hasta ${lastSlot.dateHuman.split(',')[1]})\n`;
-      }
+      // Agrupar slots por día para generar rangos legibles
+      const slotsByDay = {};
+      slots.forEach(slot => {
+        // Extraer fecha base (YYYY-MM-DD) para agrupar
+        const d = new Date(slot.startTime);
+        const dayKey = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+        if (!slotsByDay[dayKey]) {
+          slotsByDay[dayKey] = {
+            dateHuman: slot.dateHuman.split(',')[0] + ',' + slot.dateHuman.split(',')[1], // "lunes 15 de enero"
+            slots: []
+          };
+        }
+        slotsByDay[dayKey].slots.push(slot);
+      });
+
+      info += `\nRESUMEN_AGENDA (Usa estos rangos para responder al usuario qué horarios tienes):\n`;
+
+      Object.values(slotsByDay).forEach(dayGroup => {
+        // Algoritmo de fusión de intervalos
+        // 1. Convertir a intervalos [start, end]
+        const intervals = dayGroup.slots.map(s => {
+          const start = new Date(s.startTime).getTime();
+          return { start, end: start + 30 * 60000 };
+        }).sort((a, b) => a.start - b.start);
+
+        // 2. Fusionar
+        if (intervals.length === 0) return;
+
+        const merged = [];
+        let current = intervals[0];
+
+        for (let i = 1; i < intervals.length; i++) {
+          const next = intervals[i];
+          if (next.start <= current.end) {
+            // Se solapan o son contiguos -> extender el final
+            current.end = Math.max(current.end, next.end);
+          } else {
+            // Hueco encontrado -> guardar y empezar nuevo
+            merged.push(current);
+            current = next;
+          }
+        }
+        merged.push(current);
+
+        // 3. Formatear output
+        const rangesStr = merged.map(m => {
+          const startStr = formatDateHumanWithoutTimezone(new Date(m.start)).split(',')[1].trim(); // Solo hora
+          const endStr = formatDateHumanWithoutTimezone(new Date(m.end)).split(',')[1].trim();   // Solo hora
+          return `${startStr} a ${endStr}`;
+        }).join(' y de ');
+
+        info += `  - Para el ${dayGroup.dateHuman}: Disponible de ${rangesStr}\n`;
+      });
+
+      info += `  (Menciona estos rangos exactos. NO inventes disponibilidad fuera de estos bloques).\n`;
 
       info += `\nLISTA_COMPLETA_HORARIOS (Busca aquí si el usuario pide una hora específica):\n`;
 
@@ -1886,7 +1953,7 @@ ${userContext.isProfessional ? `
    * Determina si una acción requiere confirmación del usuario
    */
   _requiresConfirmation(functionName) {
-    return ['cancelar_cita', 'reagendar_cita'].includes(functionName);
+    return ['reagendar_cita'].includes(functionName);
   }
 
   /**
@@ -1981,7 +2048,7 @@ ${userContext.isProfessional ? `
         where: {
           peopleId: patient.id,
           // CORRECCIÓN CRÍTICA: Usar Op.notIn en lugar de Op.ne para arrays
-          status: { [Op.notIn]: ['no asistio', 'cancelada', 'cumplida', 'completada'] }
+          status: { [Op.notIn]: ['no asistio', 'cancelada', 'cumplida', 'completada', 'Cancelada'] }
         },
         include: [
           {
